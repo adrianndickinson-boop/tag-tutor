@@ -1,0 +1,1285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tag Tutor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cinzel:wght@600;800&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* Layout: two panes. Left = commander + tag search + results grid. Right = sticky deck ledger. Stacks under 960px. */
+:root{
+  --bg:#eceef1; --surface:#f8f9fa; --sunk:#e1e4e9; --line:#cdd2da;
+  --fg:#1c222b; --muted:#5b6574; --accent:#1f6fbf; --accent-fg:#ffffff;
+  --c1:#a67c00; --c2:#1f6fbf; --c3:#c0392b; --grad:#a67c00, #1f6fbf, #5d3f8c, #c0392b, #2e7d43;
+  --accent-soft:color-mix(in srgb, var(--accent) 16%, var(--surface));
+  --good:#2e7d4f; --warn:#a86a12; --bad:#b03a2e;
+  --f-display:Cinzel,"Trajan Pro",Georgia,serif; --f-body:Inter,system-ui,-apple-system,"Segoe UI",sans-serif; --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --r:8px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#131820; --surface:#1b222c; --sunk:#10151b; --line:#2c3644;
+  --fg:#e3e7ed; --muted:#93a0b2; --accent:#74b4f2; --accent-fg:#10131a;
+  --c1:#f2d27a; --c2:#74b4f2; --c3:#f2846f; --grad:#f2d27a, #74b4f2, #b9a0e6, #f2846f, #72d08e;
+  --good:#5cbf86; --warn:#e0a548; --bad:#e8705f; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:
+    radial-gradient(900px 520px at -5% -10%, color-mix(in srgb, var(--c1) 26%, transparent), transparent 65%),
+    radial-gradient(800px 520px at 105% 5%, color-mix(in srgb, var(--c2) 22%, transparent), transparent 65%),
+    radial-gradient(900px 600px at 50% 110%, color-mix(in srgb, var(--c3) 14%, transparent), transparent 65%),
+    var(--bg);
+  background-attachment:fixed;color:var(--fg);font:14px/1.45 var(--f-body);padding:20px max(16px,env(safe-area-inset-left)) 40px max(16px,env(safe-area-inset-right))}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;margin:0;text-wrap:balance}
+h1{font-size:26px;letter-spacing:.02em}
+h2{font-size:17px;letter-spacing:.03em}
+h3{font-size:12px;font-family:var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+header p{margin:2px 0 0;color:var(--muted)}
+.deckbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:16px;align-items:start}
+@media (max-width:960px){.main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.deck{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+@media (max-width:960px){.deck{position:static;max-height:none}}
+input[type=text],input[type=number],select{background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
+.btn{background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:7px 12px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+.btn.small{padding:3px 8px;font-size:12px}
+.muted{color:var(--muted)}
+/* commander */
+.cmdr{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.cmdr > img{width:146px;border-radius:7px;box-shadow:0 2px 8px rgb(0 0 0/.25)}
+.cmdr-info{flex:1;min-width:200px;display:flex;flex-direction:column;gap:8px}
+.cmdr-name{font-family:var(--f-display);font-size:20px}
+.oracle{white-space:pre-line;font-size:13px;color:var(--muted);max-width:60ch}
+.search-pop{position:relative}
+.suggest{position:absolute;z-index:20;left:0;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgb(0 0 0/.2);max-height:320px;overflow:auto}
+.suggest button{display:flex;width:100%;gap:10px;align-items:center;background:none;border:0;padding:7px 10px;text-align:left}
+.suggest button:hover,.suggest button:focus{background:var(--accent-soft)}
+.ms{width:15px;height:15px;vertical-align:-2px;margin-right:1px}
+.pips .ms{width:20px;height:20px}
+/* tags */
+.cats{display:flex;flex-direction:column;gap:10px}
+.cat{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:start}
+@media (max-width:520px){.cat{grid-template-columns:1fr}}
+.cat h3{padding-top:5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--sunk);border-radius:999px;padding:3px 11px;font-size:13px}
+.chip:hover{border-color:var(--accent)}
+.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.filters label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.filters input[type=number]{width:90px}
+.query{font-family:var(--f-mono);font-size:12px;background:var(--sunk);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:nowrap}
+/* results */
+.reshead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+.card{display:flex;flex-direction:column;gap:6px}
+.card .imgbtn{padding:0;border:0;background:none;border-radius:7px;aspect-ratio:488/680;overflow:hidden;max-width:100%}
+.card img{width:100%;height:100%;object-fit:cover;display:block}
+.card .row{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px}
+.card.in .imgbtn{outline:3px solid var(--good);outline-offset:-3px}
+.price{font-variant-numeric:tabular-nums;color:var(--muted)}
+.status{padding:24px;text-align:center;color:var(--muted)}
+/* deck */
+.counts{display:flex;justify-content:space-between;align-items:baseline}
+.big{font-family:var(--f-body);font-weight:600;font-size:28px;font-variant-numeric:tabular-nums}
+.roles{display:flex;flex-direction:column;gap:7px}
+.role{display:grid;grid-template-columns:90px 1fr 52px;gap:8px;align-items:center;font-size:13px}
+.bar{height:8px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--warn);border-radius:4px}
+.bar i.ok{background:var(--good)}
+.bar i.over{background:var(--bad)}
+.role span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.curve{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;align-items:end;height:90px}
+.curve div{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;font-size:11px;color:var(--muted);gap:2px}
+.curve b{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0;min-height:1px}
+.curve em{font-style:normal;color:var(--fg);font-variant-numeric:tabular-nums}
+.group h3{display:flex;justify-content:space-between;margin-bottom:4px;border-bottom:1px solid var(--line);padding-bottom:3px}
+.line{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto;gap:6px;align-items:center;padding:3px 0;font-size:13px}
+.line .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+.line select{font-size:11px;padding:2px 4px}
+.line .x{border:0;background:none;color:var(--muted);font-size:16px;padding:0 4px}
+.line .x:hover{color:var(--bad)}
+.qty{font-variant-numeric:tabular-nums;color:var(--muted)}
+textarea{width:100%;min-height:120px;font:12px var(--f-mono);background:var(--sunk);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px}
+#hover{position:fixed;pointer-events:none;width:230px;border-radius:10px;box-shadow:0 8px 30px rgb(0 0 0/.4);z-index:50}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--fg);padding:18px;max-width:min(720px,94vw)}
+dialog::backdrop{background:rgb(0 0 0/.55)}
+.dlg{display:flex;gap:18px;flex-wrap:wrap}
+.dlg img{width:280px;max-width:100%;border-radius:12px}
+.dlg .info{flex:1;min-width:220px;display:flex;flex-direction:column;gap:10px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+a{color:var(--accent)}
+.badge{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.04em;padding:1px 5px;border-radius:4px;background:var(--bad);color:#fff;vertical-align:1px;margin-left:3px}
+.badge.lo{background:var(--warn)}
+.edh{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.chip.edh-chip{border-style:dashed}
+.chip .ct{font-size:11px;opacity:.7;font-variant-numeric:tabular-nums}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.bracket{display:flex;flex-direction:column;gap:8px;background:var(--sunk);border-radius:6px;padding:12px}
+.bnum{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.bnum strong{font-size:15px}
+.warns{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.warns li{border-left:3px solid var(--line);padding-left:8px}
+.warns li.bad{border-color:var(--bad)}
+.warns li.warn{border-color:var(--warn)}
+.warns li.ok{border-color:var(--good)}
+.warns .why{font-size:12px;color:var(--muted)}
+.fine{font-size:11px;color:var(--muted);margin:0}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}
+.tab{background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:7px 12px;color:var(--muted);font-weight:600}
+.tab[aria-selected=true]{color:var(--fg);border-bottom-color:var(--accent)}
+#tabBody{display:flex;flex-direction:column;gap:14px}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.card .meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:12px;min-height:18px}
+.card .meta .badge{margin-left:0}
+.card .btns{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px}
+.card .btns > :only-child{grid-column:1 / -1}
+.card .btns .btn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:5px 8px}
+.card.maybe .imgbtn{outline:3px dashed var(--warn);outline-offset:-3px}
+.hand{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.hand img,.hand .tile{width:100%;aspect-ratio:488/680;border-radius:5px;display:block;object-fit:cover}
+.hand .tile{border:1px solid var(--line);background:var(--sunk);display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;padding:4px}
+.hand .drawn{outline:2px solid var(--accent);outline-offset:1px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.tbl th{font-size:11px;color:var(--muted);font-weight:600;text-align:right;padding:3px 4px;border-bottom:1px solid var(--line)}
+.tbl td{text-align:right;padding:3px 4px}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+code{font-family:var(--f-mono);font-size:12px;background:var(--sunk);padding:1px 4px;border-radius:3px}
+
+/* ---- color-identity theme ---- */
+.banner{position:relative;overflow:hidden;border-radius:16px;padding:26px 22px 28px;color:#fff;min-height:132px;
+  background:
+    linear-gradient(100deg, rgb(10 12 20/.93) 0%, rgb(10 12 20/.74) 48%, rgb(10 12 20/.2) 100%),
+    var(--art, none) center 28%/cover no-repeat,
+    linear-gradient(120deg, var(--grad));
+  box-shadow:0 10px 30px -12px color-mix(in srgb, var(--c1) 60%, transparent)}
+.banner::after{content:"";position:absolute;left:0;right:0;bottom:0;height:5px;background:linear-gradient(90deg, var(--grad))}
+.banner h1{font-size:clamp(28px,4vw,40px);font-weight:800;letter-spacing:.04em;text-shadow:0 2px 12px rgb(0 0 0/.5)}
+.banner p{color:rgb(255 255 255/.82);max-width:52ch}
+.banner .pips{display:flex;gap:6px;margin-top:10px}
+.banner .pips img{width:26px;height:26px;filter:drop-shadow(0 2px 4px rgb(0 0 0/.6))}
+.banner label{color:rgb(255 255 255/.8)}
+.banner .btn,.banner select{background:rgb(255 255 255/.12);border-color:rgb(255 255 255/.28);color:#fff;backdrop-filter:blur(4px)}
+.banner .btn:hover{background:rgb(255 255 255/.22);border-color:#fff}
+.banner select option{color:#111;background:#fff}
+.panel{background:linear-gradient(90deg, var(--grad)) top / 100% 4px no-repeat, var(--surface);border-radius:14px;
+  box-shadow:0 1px 2px rgb(0 0 0/.06), 0 8px 24px -16px color-mix(in srgb, var(--c1) 50%, transparent)}
+h2{color:color-mix(in srgb, var(--accent) 55%, var(--fg))}
+.btn.primary{background:linear-gradient(135deg, var(--c1), var(--c2));border-color:transparent;color:#fff;text-shadow:0 1px 2px rgb(0 0 0/.35)}
+.btn.primary:hover{filter:brightness(1.08)}
+.chip[aria-pressed=true]{background:linear-gradient(135deg, var(--c1), var(--c2));border-color:transparent;color:#fff;text-shadow:0 1px 2px rgb(0 0 0/.3)}
+.chip:not([aria-pressed=true]):hover{background:var(--accent-soft)}
+.cmdr > img{box-shadow:0 0 0 3px var(--surface), 0 0 0 5px var(--c1), 0 10px 28px -6px color-mix(in srgb, var(--c2) 70%, transparent);border-radius:9px}
+.big{color:var(--accent)}
+.curve b{background:linear-gradient(180deg, var(--c1), var(--c2))}
+.tab[aria-selected=true]{border-bottom-color:var(--c1)}
+.card .imgbtn{transition:transform .18s ease, box-shadow .18s ease;box-shadow:0 2px 6px rgb(0 0 0/.18)}
+.card .imgbtn:hover{transform:translateY(-4px) rotate(-1deg);box-shadow:0 12px 24px -8px color-mix(in srgb, var(--c1) 70%, rgb(0 0 0/.5))}
+@media (prefers-reduced-motion:reduce){.card .imgbtn{transition:none}.card .imgbtn:hover{transform:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="banner" id="banner">
+    <div>
+      <h1>Tag Tutor</h1>
+      <p id="tagline">Search Scryfall's card tags inside your commander's colors, and build the 99.</p>
+      <div class="pips" id="bannerPips"></div>
+    </div>
+    <div class="deckbar">
+      <label for="deckSel" class="muted">Deck</label>
+      <select id="deckSel"></select>
+      <button class="btn" id="newDeck">New deck</button>
+      <button class="btn" id="renameDeck">Rename</button>
+      <button class="btn" id="delDeck">Delete</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <section class="panel" style="gap:18px">
+      <div class="cmdr" id="cmdr"></div>
+
+      <div class="search-pop">
+        <label for="cmdrSearch"><h3 style="margin-bottom:6px">Commander</h3></label>
+        <input type="text" id="cmdrSearch" placeholder="Search for a legendary creature…" autocomplete="off" style="width:100%">
+        <div class="suggest" id="suggest" hidden></div>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom:8px">Deck theme</h3>
+        <div class="chips" id="themeChips"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <label for="themeSearch" class="sr">Search all EDHREC themes</label>
+          <input type="text" id="themeSearch" list="themeList" autocomplete="off" placeholder="Search all EDHREC themes: landfall, artifacts, elves, aggro…" style="flex:1;min-width:0">
+          <datalist id="themeList"></datalist>
+        </div>
+        <p class="fine" id="themeNote" style="margin-top:6px"></p>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom:8px">Tags</h3>
+        <div class="cats" id="cats"></div>
+      </div>
+
+      <div class="filters">
+        <label for="customTag">Any tag
+          <input type="text" id="customTag" placeholder="e.g. lifegain" style="width:150px">
+        </label>
+        <label for="typeSel">Card type
+          <select id="typeSel">
+            <option value="">Any</option><option>creature</option><option>instant</option><option>sorcery</option>
+            <option>artifact</option><option>enchantment</option><option>planeswalker</option><option>land</option>
+          </select>
+        </label>
+        <label for="mvMax">Max mana value<input type="number" id="mvMax" min="0" max="20" placeholder="any"></label>
+        <label for="usdMax">Max price (USD)<input type="number" id="usdMax" min="0" step="0.5" placeholder="any"></label>
+        <label for="orderSel">Sort
+          <select id="orderSel">
+            <option value="edhrec">Most played in Commander</option>
+            <option value="cmc">Mana value</option>
+            <option value="usd">Price</option>
+            <option value="name">Name</option>
+          </select>
+        </label>
+        <label for="extra">Extra Scryfall syntax
+          <input type="text" id="extra" placeholder='e.g. o:"draw a card"' style="width:180px">
+        </label>
+        <button class="btn primary" id="go">Search</button>
+      </div>
+      <div class="query" id="query" title="The Scryfall query this search runs"></div>
+
+      <div class="reshead">
+        <h2 id="resTitle">Results</h2>
+        <span class="muted" id="resCount"></span>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div id="more"></div>
+    </section>
+
+    <aside class="panel deck" id="deck"></aside>
+  </div>
+</div>
+
+<img id="hover" hidden alt="">
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "https://api.scryfall.com";
+const SYM = s => `https://svgs.scryfall.io/card-symbols/${s.replace(/\//g,"")}.svg`;
+
+// role targets follow the common 8x8 / "Command Zone" template
+const ROLES = [
+  {key:"Ramp", target:10},
+  {key:"Card draw", target:10},
+  {key:"Removal", target:8},
+  {key:"Board wipes", target:3},
+  {key:"Synergy", target:31},
+  {key:"Lands", target:37},
+];
+
+const CATS = [
+  {role:"Ramp", tags:["ramp","mana-rock","mana-dork","cost-reducer","extra-land"]},
+  {role:"Card draw", tags:["card-advantage","draw","tutor","wheel","impulse-draw"]},
+  {role:"Removal", tags:["removal","creature-removal","artifact-removal","enchantment-removal","counterspell","bounce","graveyard-hate"]},
+  {role:"Board wipes", tags:["board-wipe"]},
+  {role:"Synergy", tags:["sacrifice-outlet","recursion","reanimate","blink","lifegain","mill","burn","evasion","anthem","protection","untapper","copy","extra-turn"]},
+  {role:"Lands", tags:["fetchland","dual-land","utility-land"]},
+];
+
+const BASICS = {W:"Plains",U:"Island",B:"Swamp",R:"Mountain",G:"Forest"};
+const EDHREC = "https://json.edhrec.com/pages/";
+const SPELLBOOK = "https://backend.commanderspellbook.com/find-my-combos";
+const BRACKETS = {1:"Exhibition",2:"Core",3:"Upgraded",4:"Optimized",5:"cEDH"};
+
+/* ---------- state ---------- */
+let store = load();
+let search = {mode:"tag", tag:"ramp", role:"Ramp", edhList:null, next:null, results:[]};
+let edh = {key:null, cmd:null, lists:null, themes:null, scope:null, error:false};
+let themeIndex = [], showAllThemes = false;
+let flags = {gc:new Set(), mld:new Set(), turns:new Set()};
+let combos = {key:"", list:[], almost:[], loading:false, error:false};
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem("tagtutor")); if(s && s.decks && Object.keys(s.decks).length) return s; }catch(e){}
+  const id = uid();
+  return {current:id, decks:{[id]:{name:"New deck", commander:null, cards:[]}}};
+}
+function save(){ try{ localStorage.setItem("tagtutor", JSON.stringify(store)); }catch(e){} }
+function uid(){ return Math.random().toString(36).slice(2,9); }
+const deck = () => store.decks[store.current];
+
+/* ---------- scryfall with polite rate limit ---------- */
+let nextSlot = 0;
+async function sf(url, body){
+  const now = Date.now(), wait = Math.max(0, nextSlot - now);
+  nextSlot = now + wait + 110;
+  if(wait) await new Promise(r=>setTimeout(r,wait));
+  const res = await fetch(url, body
+    ? {method:"POST", headers:{Accept:"application/json","Content-Type":"application/json"}, body:JSON.stringify(body)}
+    : {headers:{Accept:"application/json"}});
+  return res.json();
+}
+
+/* Scryfall card data by name, cached, 75 names per request */
+const byName = new Map();
+async function cardsByName(names){
+  const need = [...new Set(names)].filter(n=>!byName.has(n));
+  for(let i=0; i<need.length; i+=75){
+    const r = await sf(`${API}/cards/collection`, {identifiers: need.slice(i,i+75).map(name=>({name}))});
+    (r.data||[]).forEach(c=>{ const l = lite(c); byName.set(l.name,l); byName.set(l.name.split(" // ")[0],l); });
+  }
+  return names.map(n=>byName.get(n) || byName.get(n.split(" // ")[0])).filter(Boolean);
+}
+
+/* Game Changers, mass land denial and extra-turn lists, cached for a week */
+async function loadFlags(){
+  try{
+    const c = JSON.parse(localStorage.getItem("tagtutor-flags"));
+    if(c && Date.now() - c.t < 7*864e5){ flags = {gc:new Set(c.gc), mld:new Set(c.mld), turns:new Set(c.turns)}; return; }
+  }catch(e){}
+  const names = async q=>{
+    const out = []; let url = `${API}/cards/search?q=${encodeURIComponent(q)}`;
+    while(url){ const r = await sf(url); if(r.object==="error") break; out.push(...r.data.map(c=>c.name)); url = r.has_more ? r.next_page : null; }
+    return out;
+  };
+  try{
+    const gc = await names("is:gamechanger"), mld = await names("otag:mass-land-denial f:commander"), turns = await names("otag:extra-turn f:commander");
+    flags = {gc:new Set(gc), mld:new Set(mld), turns:new Set(turns)};
+    try{ localStorage.setItem("tagtutor-flags", JSON.stringify({t:Date.now(), gc, mld, turns})); }catch(e){}
+  }catch(e){}
+}
+function flagBadges(name){
+  return (flags.gc.has(name) ? `<span class="badge" title="Game Changer">GC</span>` : "")
+    + (flags.mld.has(name) ? `<span class="badge" title="Mass land denial">LD</span>` : "")
+    + (flags.turns.has(name) ? `<span class="badge lo" title="Extra turn">Turn</span>` : "");
+}
+
+/* EDHREC pages: commander, commander + theme, or a theme across all decks */
+const edhCache = new Map();
+const MIN_THEME_DECKS = 20; // below this, a commander's theme page is too small to rank cards
+function edhJson(path){
+  if(!edhCache.has(path)){
+    const p = fetch(EDHREC + path + ".json").then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); });
+    p.catch(()=>edhCache.delete(path));
+    edhCache.set(path, p);
+  }
+  return edhCache.get(path);
+}
+function loadEdhrec(){
+  const d = deck(), c = d.commander, th = d.theme || null;
+  const s = c ? slug(c.name) : null;
+  const key = (s || "") + "|" + (th ? th.slug : "");
+  if(edh.key === key) return edh.promise;
+  edh = {key, cmd:s, themes: edh.cmd === s ? edh.themes : null, lists:null, scope:null, error:false};
+  edh.promise = fetchEdhrec(key, s, th);
+  return edh.promise;
+}
+async function fetchEdhrec(key, s, th){
+  if(search.mode === "edhrec") search.mode = "tag";
+  renderCats(); renderThemes();
+  if(!s && !th) return;
+  try{
+    if(s && !edh.themes){
+      try{ const base = await edhJson("commanders/" + s); edh.themes = base.panels?.taglinks || []; }
+      catch(e){ edh.themes = []; }
+      if(edh.key !== key) return;
+    }
+    let path;
+    if(!th){ path = "commanders/" + s; edh.scope = "commander"; }
+    else if(s && (edh.themes.find(t=>t.slug === th.slug)?.count || 0) >= MIN_THEME_DECKS){ path = `commanders/${s}/${th.slug}`; edh.scope = "commander-theme"; }
+    else { path = "tags/" + th.slug; edh.scope = "theme"; }
+    const j = await edhJson(path);
+    if(edh.key !== key) return;
+    edh.lists = (j.container?.json_dict?.cardlists || []).filter(l=>l.cardviews?.length);
+    if(!edh.lists.length) edh.error = true;
+  }catch(e){ if(edh.key === key) edh.error = true; }
+  renderCats(); renderThemes();
+}
+async function loadThemeIndex(){
+  try{
+    const j = await edhJson("tags");
+    themeIndex = (j.container?.json_dict?.cardlists?.[0]?.cardviews || [])
+      .map(v=>({name:v.name, slug:(v.url||"").split("/").pop(), count:v.num_decks})).filter(t=>t.slug);
+    $("themeList").innerHTML = themeIndex.map(t=>`<option value="${esc(t.name)}"></option>`).join("");
+  }catch(e){ $("themeSearch").placeholder = "Couldn't load EDHREC's theme list"; }
+}
+const short = n => n >= 1000 ? (n/1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n);
+function renderThemes(){
+  const d = deck(), th = d.theme, c = d.commander, box = $("themeChips");
+  box.innerHTML = "";
+  const chip = (label, t, count)=>{
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.setAttribute("aria-pressed", t ? (th && th.slug === t.slug) : !th);
+    b.innerHTML = esc(label) + (count ? ` <span class="ct">${short(count)}</span>` : "");
+    b.onclick = ()=>setTheme(t);
+    box.appendChild(b);
+  };
+  chip(c ? "Any theme" : "No theme", null);
+  const all = edh.themes || [];
+  const shown = showAllThemes ? all : all.slice(0, 14);
+  shown.forEach(t=>chip(t.value, {slug:t.slug, name:t.value}, t.count));
+  if(th && !shown.some(t=>t.slug === th.slug)) chip(th.name, th);
+  if(all.length > 14){
+    const m = document.createElement("button");
+    m.className = "btn small"; m.textContent = showAllThemes ? "Fewer" : `All ${all.length} themes`;
+    m.onclick = ()=>{ showAllThemes = !showAllThemes; renderThemes(); };
+    box.appendChild(m);
+  }
+  let note = "";
+  if(c && !th) note = all.length ? `Themes EDHREC players use with ${c.name}, with deck counts. Pick one to see its cards, or search every theme below.` : (edh.themes ? `EDHREC lists no themes for ${c.name}. You can still pick any theme below.` : "Loading themes…");
+  else if(th && edh.scope === "commander-theme"){
+    const n = all.find(t=>t.slug === th.slug)?.count;
+    note = `EDHREC lists show ${n ? n.toLocaleString() + " " : ""}${c.name} decks built around ${th.name}.`;
+  }
+  else if(th && c && edh.scope === "theme"){
+    const n = all.find(t=>t.slug === th.slug)?.count || 0;
+    note = `${n ? `Only ${n} ${c.name} deck${n === 1 ? "" : "s"} on EDHREC use` : `EDHREC has no ${c.name} decks using`} ${th.name}, so the lists show cards from all ${th.name} decks, filtered to your colors.`;
+  }
+  else if(th && !c) note = `Open Top Commanders in the EDHREC row to find a commander for ${th.name}.`;
+  $("themeNote").textContent = note;
+}
+async function setTheme(t){
+  const d = deck();
+  d.theme = t; save(); applyTheme();
+  await loadEdhrec();
+  if(deck() !== d || !edh.lists) return;
+  const want = d.commander ? "Top Cards" : "Top Commanders";
+  const l = edh.lists.find(x=>x.header === want) || edh.lists[0];
+  search.mode = "edhrec"; search.edhList = l.header; search.role = roleForList(l.header);
+  renderCats(); runSearch();
+}
+document.getElementById("themeSearch").addEventListener("change", e=>{
+  const v = e.target.value.trim().toLowerCase();
+  const t = themeIndex.find(x=>x.name.toLowerCase() === v) || themeIndex.find(x=>x.name.toLowerCase().startsWith(v));
+  if(t){ e.target.value = ""; setTheme({slug:t.slug, name:t.name}); }
+  else if(v) toast(`EDHREC has no theme called “${e.target.value.trim()}”`);
+});
+function roleForList(h){ return /mana artifact|ramp/i.test(h) ? "Ramp" : /land/i.test(h) ? "Lands" : /draw/i.test(h) ? "Card draw" : /removal/i.test(h) ? "Removal" : /wipe/i.test(h) ? "Board wipes" : "Synergy"; }
+function lite(c){
+  const face = c.card_faces && c.card_faces[0];
+  const imgs = c.image_uris || (face && face.image_uris) || {};
+  return {
+    id:c.id, name:c.name, cmc:c.cmc||0,
+    mana_cost:c.mana_cost ?? (face ? face.mana_cost : ""),
+    type_line:c.type_line||"", ci:c.color_identity||[],
+    price: parseFloat(c.prices && (c.prices.usd || c.prices.usd_foil)) || 0,
+    img: imgs.normal || "", art: imgs.art_crop || "",
+    uri: c.scryfall_uri,
+    produced: c.produced_mana || (face && face.produced_mana) || [],
+    oracle: c.oracle_text ?? (c.card_faces||[]).map(f=>f.oracle_text).join("\n—\n"),
+  };
+}
+
+/* ---------- small helpers ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+const mana = cost => (cost||"").match(/\{[^}]+\}/g)?.map(m=>`<img class="ms" alt="${esc(m)}" src="${SYM(m.slice(1,-1))}">`).join("") || "";
+const money = n => "$" + n.toFixed(2);
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),1800); }
+const isLand = c => /\bLand\b/.test(c.type_line) && !/\/\//.test(c.type_line);
+
+/* ---------- commander ---------- */
+/* theme colors per mana color: [light, dark]; black uses violet so it stays readable */
+const MANA_HUES = {W:["#a67c00","#f2d27a"], U:["#1f6fbf","#74b4f2"], B:["#5d3f8c","#b9a0e6"], R:["#c0392b","#f2846f"], G:["#2e7d43","#72d08e"], C:["#5f6b7a","#aeb8c6"]};
+const darkMQ = matchMedia("(prefers-color-scheme: dark)");
+function applyTheme(){
+  const c = deck().commander;
+  const ci = c ? (c.ci.length ? c.ci : ["C"]) : ["W","U","B","R","G"];
+  const cols = ci.map(x=>MANA_HUES[x][darkMQ.matches ? 1 : 0]);
+  const s = document.documentElement.style;
+  s.setProperty("--accent", cols[0]);
+  s.setProperty("--c1", cols[0]);
+  s.setProperty("--c2", cols[1] || cols[0]);
+  s.setProperty("--c3", cols[2] || cols[1] || cols[0]);
+  s.setProperty("--grad", (cols.length > 1 ? cols : [cols[0], cols[0]]).join(", "));
+  $("banner").style.setProperty("--art", c && c.art ? `url("${c.art}")` : "none");
+  $("bannerPips").innerHTML = c ? ci.map(x=>`<img alt="${x}" src="${SYM(x)}">`).join("") : "";
+  $("tagline").textContent = c
+    ? `Brewing ${c.name}${deck().theme ? ` · ${deck().theme.name}` : ""}`
+    : "Search Scryfall's card tags inside your commander's colors, and build the 99.";
+}
+darkMQ.addEventListener("change", applyTheme);
+
+function renderCommander(){
+  applyTheme();
+  const c = deck().commander;
+  if(!c){ $("cmdr").innerHTML = `<p class="muted">Pick a commander below. Every search then stays inside its color identity.</p>`; return; }
+  const pips = c.ci.length ? c.ci.map(x=>`<img class="ms" alt="${x}" src="${SYM(x)}">`).join("") : `<img class="ms" alt="Colorless" src="${SYM("C")}">`;
+  $("cmdr").innerHTML = `
+    <img src="${c.img}" alt="${esc(c.name)}">
+    <div class="cmdr-info">
+      <div class="cmdr-name">${esc(c.name)} <span style="font-family:var(--f-body)">${mana(c.mana_cost)}</span></div>
+      <div class="muted">${esc(c.type_line)}</div>
+      <div class="pips" title="Color identity">${pips}</div>
+      <div class="oracle">${esc(c.oracle||"")}</div>
+      <div><a href="https://edhrec.com/commanders/${slug(c.name)}" target="_blank" rel="noopener">See this commander on EDHREC</a></div>
+    </div>`;
+}
+function slug(n){ return n.split(" // ")[0].toLowerCase().replace(/[^a-z0-9\s-]/g,"").trim().replace(/\s+/g,"-"); }
+
+let sTimer;
+$("cmdrSearch").addEventListener("input", e=>{
+  clearTimeout(sTimer);
+  const q = e.target.value.trim();
+  if(q.length < 2){ $("suggest").hidden = true; return; }
+  sTimer = setTimeout(async ()=>{
+    const r = await sf(`${API}/cards/search?q=${encodeURIComponent(`is:commander f:commander ${q}`)}&order=edhrec`);
+    const list = (r.data||[]).slice(0,8);
+    const box = $("suggest");
+    box.innerHTML = list.length ? "" : `<div class="status">No commanders match “${esc(q)}”.</div>`;
+    list.forEach(c=>{
+      const b = document.createElement("button");
+      const l = lite(c);
+      b.innerHTML = `<span style="flex:1">${esc(l.name)}</span><span>${mana(l.mana_cost)}</span>`;
+      b.onclick = ()=>{ setCommander(l); box.hidden = true; e.target.value = ""; };
+      box.appendChild(b);
+    });
+    box.hidden = false;
+  }, 300);
+});
+document.addEventListener("click", e=>{ if(!e.target.closest(".search-pop")) $("suggest").hidden = true; });
+
+function setCommander(c){
+  const d = deck();
+  d.commander = c;
+  if(d.name === "New deck") d.name = c.name.split(",")[0].split(" // ")[0];
+  // drop cards that no longer fit the identity
+  const before = d.cards.length;
+  d.cards = d.cards.filter(x => x.ci.every(col => c.ci.includes(col)) && !(x.basic && x.color !== "C" && !c.ci.includes(x.color)));
+  if(d.cards.length < before) toast(`Removed ${before-d.cards.length} cards outside the new colors`);
+  const {edh: _drop, ...clean} = c; d.commander = clean;
+  save(); renderAll();
+  if(d.theme) setTheme(d.theme); else runSearch();
+}
+
+/* ---------- tags ---------- */
+function renderCats(){
+  $("cats").innerHTML = "";
+  const er = document.createElement("div"); er.className = "cat";
+  er.innerHTML = `<h3>EDHREC</h3><div class="chips"></div>`;
+  const ec = er.lastChild;
+  if(!deck().commander && !deck().theme) ec.innerHTML = `<span class="muted">Pick a commander or a deck theme to see what other players run.</span>`;
+  else if(edh.error) ec.innerHTML = `<span class="muted">EDHREC has no page for this ${deck().theme ? "theme" : "commander"}.</span>`;
+  else if(!edh.lists) ec.innerHTML = `<span class="muted">Loading EDHREC lists…</span>`;
+  else edh.lists.forEach(l=>{
+    const b = document.createElement("button");
+    b.className = "chip edh-chip"; b.textContent = l.header;
+    b.setAttribute("aria-pressed", search.mode==="edhrec" && search.edhList===l.header);
+    b.onclick = ()=>{ search.mode="edhrec"; search.edhList=l.header; search.role=roleForList(l.header); renderCats(); runSearch(); };
+    ec.appendChild(b);
+  });
+  $("cats").appendChild(er);
+  CATS.forEach(cat=>{
+    const row = document.createElement("div"); row.className = "cat";
+    row.innerHTML = `<h3>${cat.role}</h3><div class="chips"></div>`;
+    cat.tags.forEach(t=>{
+      const b = document.createElement("button");
+      b.className = "chip"; b.textContent = t;
+      b.setAttribute("aria-pressed", search.mode==="tag" && search.tag===t && search.role===cat.role);
+      b.onclick = ()=>{ search.mode="tag"; search.tag=t; search.role=cat.role;$("customTag").value=""; renderCats(); runSearch(); };
+      row.lastChild.appendChild(b);
+    });
+    $("cats").appendChild(row);
+  });
+}
+$("customTag").addEventListener("keydown", e=>{ if(e.key==="Enter"){ useCustom(); runSearch(); } });
+function useCustom(){
+  const v = $("customTag").value.trim().toLowerCase().replace(/^otag:/,"").replace(/\s+/g,"-");
+  if(v){ search.mode = "tag"; search.tag = v; search.role = "Synergy"; renderCats(); }
+}
+["typeSel","orderSel"].forEach(id=>$(id).addEventListener("change", runSearch));
+["mvMax","usdMax","extra"].forEach(id=>$(id).addEventListener("keydown", e=>{ if(e.key==="Enter") runSearch(); }));
+$("go").onclick = ()=>{ useCustom(); runSearch(); };
+
+function buildQuery(){
+  const p = [];
+  const c = deck().commander;
+  if(c) p.push(`id<=${c.ci.length ? c.ci.join("").toLowerCase() : "c"}`);
+  p.push("f:commander");
+  if(search.tag) p.push(`otag:${search.tag}`);
+  if($("typeSel").value) p.push(`t:${$("typeSel").value}`);
+  if($("mvMax").value !== "") p.push(`mv<=${$("mvMax").value}`);
+  if($("usdMax").value !== "") p.push(`usd<=${$("usdMax").value}`);
+  if($("extra").value.trim()) p.push($("extra").value.trim());
+  if(c) p.push(`-!"${c.name}"`);
+  return p.join(" ");
+}
+
+let searchSeq = 0;
+async function runEdhrec(){
+  const seq = ++searchSeq;
+  const list = (edh.lists||[]).find(l=>l.header===search.edhList);
+  const c = deck().commander, th = deck().theme;
+  const pick = /commanders/i.test(search.edhList);
+  const source = edh.scope === "commander-theme" ? `${c.name} · ${th.name} decks`
+    : edh.scope === "theme" ? `all ${th.name} decks${c && !pick ? ", filtered to your colors" : ""}`
+    : c ? `${c.name} decks` : "";
+  $("resTitle").textContent = `EDHREC: ${search.edhList}`;
+  $("query").textContent = `EDHREC · ${search.edhList} from ${source} · type, mana value and price filters apply; sort follows EDHREC`;
+  $("resCount").textContent = ""; $("more").innerHTML = "";
+  if(!list){ $("grid").innerHTML = `<div class="status" style="grid-column:1/-1">This EDHREC list isn't loaded yet.</div>`; return; }
+  $("grid").innerHTML = `<div class="status" style="grid-column:1/-1">Loading cards…</div>`;
+  try{
+    const stats = new Map(list.cardviews.map(v=>[v.name, v]));
+    let res = (await cardsByName(list.cardviews.map(v=>v.name))).map(card=>{
+      const v = stats.get(card.name) || stats.get(card.name.split(" // ")[0]) || {};
+      return {...card, edh:{
+        decks: v.num_decks ?? null,
+        incl: v.potential_decks ? Math.round(v.num_decks / v.potential_decks * 100) : null,
+        syn: typeof v.synergy === "number" ? Math.round(v.synergy * 100) : null }};
+    });
+    if(seq !== searchSeq) return;
+    if(c && !pick) res = res.filter(x=>x.ci.every(col=>c.ci.includes(col)) && x.name !== c.name);
+    const t = $("typeSel").value, mv = $("mvMax").value, usd = $("usdMax").value;
+    if(t) res = res.filter(x=>x.type_line.toLowerCase().includes(t));
+    if(mv !== "") res = res.filter(x=>x.cmc <= +mv);
+    if(usd !== "") res = res.filter(x=>x.price <= +usd);
+    search.results = res; search.next = null;
+    $("resCount").textContent = `${res.length} of ${list.cardviews.length} cards`;
+    if(!res.length){ $("grid").innerHTML = `<div class="status" style="grid-column:1/-1">No cards in this list pass your filters.</div>`; return; }
+    renderResults();
+  }catch(e){
+    $("grid").innerHTML = `<div class="status" style="grid-column:1/-1">Couldn't load card details from Scryfall. Try again.</div>`;
+  }
+}
+
+async function runSearch(){
+  if(search.mode === "edhrec") return runEdhrec();
+  const q = buildQuery(), order = $("orderSel").value;
+  $("query").textContent = q;
+  $("resTitle").textContent = `otag:${search.tag}`;
+  $("resCount").textContent = "";
+  $("grid").innerHTML = `<div class="status" style="grid-column:1/-1">Searching Scryfall…</div>`;
+  $("more").innerHTML = "";
+  const seq = ++searchSeq;
+  try{
+    const r = await sf(`${API}/cards/search?q=${encodeURIComponent(q)}&order=${order}${order==="usd"?"&dir=asc":""}`);
+    if(seq !== searchSeq) return;
+    if(r.object === "error"){
+      $("grid").innerHTML = `<div class="status" style="grid-column:1/-1">${r.code==="not_found" ? "No cards match this search. Try a different tag or loosen a filter." : esc(r.details)}</div>`;
+      return;
+    }
+    search.results = r.data.map(lite); search.next = r.has_more ? r.next_page : null;
+    $("resCount").textContent = `${r.total_cards.toLocaleString()} cards`;
+    renderResults();
+  }catch(err){
+    $("grid").innerHTML = `<div class="status" style="grid-column:1/-1">Couldn't reach Scryfall. Check your connection and try again.</div>`;
+  }
+}
+async function loadMore(){
+  if(!search.next) return;
+  $("more").innerHTML = `<div class="status">Loading…</div>`;
+  const r = await sf(search.next);
+  search.results.push(...(r.data||[]).map(lite));
+  search.next = r.has_more ? r.next_page : null;
+  renderResults();
+}
+
+function inDeck(name){ const d = deck(); return (d.commander && d.commander.name===name) || d.cards.some(c=>c.name===name); }
+
+function renderResults(){
+  const g = $("grid"); g.innerHTML = "";
+  const pick = search.mode === "edhrec" && /commanders/i.test(search.edhList || "");
+  search.results.forEach(c=>{
+    const el = document.createElement("div");
+    const isCmdr = deck().commander && deck().commander.name === c.name;
+    const have = pick ? isCmdr : inDeck(c.name);
+    const maybe = !pick && !have && inMaybe(c.name);
+    el.className = "card" + (have ? " in" : maybe ? " maybe" : "");
+    const stat = !c.edh ? "" : pick
+      ? `<div class="edh">${c.edh.decks != null ? c.edh.decks.toLocaleString() + " decks" : ""}</div>`
+      : `<div class="edh" title="Inclusion: share of these EDHREC decks that run the card. Synergy: how much more often it shows up here than in other decks of these colors.">${c.edh.incl ?? "?"}% of decks${c.edh.syn != null ? ` · ${c.edh.syn > 0 ? "+" : ""}${c.edh.syn}% synergy` : ""}</div>`;
+    const label = pick ? (isCmdr ? "Your commander" : "Use as commander") : have ? "Remove" : "Add";
+    el.innerHTML = `
+      <button class="imgbtn" title="Details">${c.img ? `<img loading="lazy" src="${c.img}" alt="${esc(c.name)}">` : esc(c.name)}</button>
+      ${stat}
+      <div class="meta"><span class="price">${c.price ? money(c.price) : "—"}</span>${flagBadges(c.name)}</div>
+      <div class="btns">${pick || have ? "" : `<button class="btn small mb" title="${maybe ? "Remove from maybeboard" : "Add to maybeboard"}">${maybe ? "Maybe ✓" : "Maybe"}</button>`}<button class="btn small main ${have?"":"primary"}" ${pick && isCmdr ? "disabled" : ""}>${label}</button></div>`;
+    el.querySelector(".imgbtn").onclick = ()=>openCard(c);
+    el.querySelector(".main").onclick = ()=> pick ? setCommander(c) : have ? removeCard(c.name) : addCard(c, search.role);
+    const mb = el.querySelector(".mb"); if(mb) mb.onclick = ()=> maybe ? removeMaybe(c.name) : addMaybe(c);
+    g.appendChild(el);
+  });
+  $("more").innerHTML = search.next ? `<div style="text-align:center"><button class="btn" id="moreBtn">Show more</button></div>` : "";
+  if(search.next) $("moreBtn").onclick = loadMore;
+}
+
+function openCard(c){
+  const have = inDeck(c.name);
+  const d = $("dlg");
+  d.innerHTML = `<div class="dlg">
+    <img src="${c.img}" alt="${esc(c.name)}">
+    <div class="info">
+      <h2>${esc(c.name)}</h2>
+      <div>${mana(c.mana_cost)}</div>
+      <div class="muted">${esc(c.type_line)}</div>
+      <div class="oracle" style="color:var(--fg)">${esc(c.oracle||"")}</div>
+      <div class="price">${c.price ? money(c.price) : "No price listed"}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:auto">
+        <button class="btn ${have?"":"primary"}" id="dAdd">${have ? "Remove from deck" : `Add as ${search.role}`}</button>
+        ${have || inMaybe(c.name) ? "" : `<button class="btn" id="dMaybe">Add to maybeboard</button>`}
+        ${saltMap.has(c.name) ? `<span class="badge lo" style="align-self:center" title="EDHREC salt score, 0–4">Salt ${saltMap.get(c.name).toFixed(2)}</span>` : ""}
+        <a class="btn" href="${c.uri}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--fg)">Open on Scryfall</a>
+        <button class="btn" id="dClose">Close</button>
+      </div>
+    </div></div>`;
+  $("dAdd").onclick = ()=>{ have ? removeCard(c.name) : addCard(c, search.role); d.close(); };
+  $("dClose").onclick = ()=>d.close();
+  if($("dMaybe")) $("dMaybe").onclick = ()=>{ addMaybe(c); d.close(); };
+  d.showModal();
+}
+
+/* ---------- deck ---------- */
+function count(){ const d = deck(); return (d.commander?1:0) + d.cards.reduce((n,c)=>n+(c.qty||1),0); }
+function addCard(c, role){
+  const d = deck();
+  if(inDeck(c.name)){ toast(`${c.name} is already in the deck`); return; }
+  if(count() >= 100){ toast("The deck already has 100 cards"); return; }
+  const {edh: _drop, ...card} = c;
+  if(search.mode === "edhrec" && role === "Synergy") card.autoRole = true;
+  d.maybe = (d.maybe || []).filter(x=>x.name !== c.name);
+  d.cards.push({...card, role: isLand(c) ? "Lands" : role});
+  save(); renderDeck(); renderResults();
+  const t = d.target || 3;
+  const gcN = [d.commander, ...d.cards].filter(x=>x && flags.gc.has(x.name)).length;
+  if(flags.gc.has(c.name) && (t <= 2 || (t === 3 && gcN > 3))) toast(`${c.name} is a Game Changer. ${gcN} in deck is over the limit for Bracket ${t}.`);
+  else if(flags.mld.has(c.name) && t <= 3) toast(`${c.name} is mass land denial, which pushes the deck to Bracket 4.`);
+  else toast(`Added ${c.name}${flags.gc.has(c.name) ? ` (Game Changer ${gcN} of 3)` : ""}`);
+}
+function removeCard(name){
+  const d = deck(); d.cards = d.cards.filter(c=>c.name!==name);
+  save(); renderDeck(); renderResults();
+}
+function fillBasics(){
+  const d = deck();
+  if(!d.commander){ toast("Pick a commander first"); return; }
+  d.cards = d.cards.filter(c=>!c.basic);
+  const lands = d.cards.filter(c=>c.role==="Lands").length;
+  const landTarget = ROLES.find(r=>r.key==="Lands").target;
+  const open = Math.min(100 - count(), landTarget - lands);
+  if(open <= 0){ toast("You already have enough lands"); save(); renderDeck(); return; }
+  const cols = d.commander.ci.length ? d.commander.ci : ["C"];
+  cols.forEach((col,i)=>{
+    const qty = Math.floor(open/cols.length) + (i < open % cols.length ? 1 : 0);
+    if(!qty) return;
+    const name = col==="C" ? "Wastes" : BASICS[col];
+    d.cards.push({id:"basic-"+col, name, basic:true, color:col, qty, cmc:0, mana_cost:"", type_line:"Basic Land — "+name, ci:[], price:0, img:"", role:"Lands", oracle:""});
+  });
+  save(); renderDeck(); toast(`Added ${open} basic lands to reach ${landTarget} lands`);
+}
+
+/* ---------- deck panel: Deck / Analysis / Playtest tabs ---------- */
+let deckTab = "deck", deckFilter = "";
+try{ deckTab = localStorage.getItem("tagtutor-tab") || "deck"; }catch(e){}
+
+function renderDeck(){
+  const d = deck(); d.maybe ||= [];
+  const n = count();
+  const total = d.cards.reduce((s,c)=>s+c.price*(c.qty||1),0) + (d.commander ? d.commander.price : 0);
+  const el = $("deck");
+  el.innerHTML = `
+    <div class="counts"><h2>${esc(d.name)}</h2><span><span class="big">${n}</span><span class="muted"> / 100</span></span></div>
+    <div class="counts muted" style="font-size:13px;gap:10px"><span id="quick"></span><span class="price">${money(total)}</span></div>
+    <div class="tabs" role="tablist">${[["deck","Deck"],["stats","Analysis"],["play","Playtest"]].map(([k,l])=>
+      `<button role="tab" class="tab" id="tab-${k}" aria-selected="${deckTab===k}" data-tab="${k}">${l}</button>`).join("")}</div>
+    <div id="tabBody"></div>`;
+  el.querySelectorAll("[data-tab]").forEach(b=>b.onclick = ()=>{
+    deckTab = b.dataset.tab; try{ localStorage.setItem("tagtutor-tab", deckTab); }catch(e){} renderDeck();
+  });
+  renderQuick();
+  if(deckTab === "stats") renderStats(); else if(deckTab === "play") renderPlay(); else renderDeckList();
+  scheduleCombos(); scheduleTagging();
+}
+function renderQuick(){
+  const q = $("quick"); if(!q) return;
+  const a = analysis();
+  q.textContent = `Bracket ${a.est}+ · Power ${a.power.toFixed(1)} · Salt ${a.salt.toFixed(1)}`;
+}
+function bindHover(root){
+  root.querySelectorAll("[data-img]").forEach(s=>{
+    s.onmouseenter = ()=>{ if(s.dataset.img){ $("hover").src = s.dataset.img; $("hover").hidden = false; } };
+    s.onmousemove = e=>{ const h=$("hover"); h.style.left = Math.max(8, e.clientX - 250)+"px"; h.style.top = Math.min(window.innerHeight-330, Math.max(8,e.clientY-160))+"px"; };
+    s.onmouseleave = ()=>{ $("hover").hidden = true; };
+  });
+}
+
+/* ----- Deck tab ----- */
+function renderDeckList(){
+  const d = deck(), box = $("tabBody");
+  const byRole = Object.fromEntries(ROLES.map(r=>[r.key,[]]));
+  d.cards.forEach(c=>(byRole[c.role] || byRole.Synergy).push(c));
+  const roleN = k => byRole[k].reduce((s,c)=>s+(c.qty||1),0);
+  const off = d.commander ? d.cards.filter(c=>!c.basic && !c.ci.every(x=>d.commander.ci.includes(x))) : [];
+  const extra = d.commander ? count() - 100 : 0;
+  const problems = [
+    off.length && `<li class="bad"><b>Outside ${esc(d.commander.name.split(",")[0])}'s colors: ${off.length}</b><div>${esc(off.map(c=>c.name).join(", "))}</div><div class="why">These aren't legal in this deck.</div></li>`,
+    extra > 0 && `<li class="bad"><b>${extra} card${extra>1?"s":""} over 100</b><div class="why">Cut ${extra} or move ${extra>1?"them":"it"} to the maybeboard.</div></li>`,
+  ].filter(Boolean);
+  box.innerHTML = `
+    ${problems.length ? `<ul class="warns">${problems.join("")}</ul>` : ""}
+    <div><h3 style="margin-bottom:8px">Roles vs. targets</h3><div class="roles">
+      ${ROLES.map(r=>{ const v=roleN(r.key), pct=Math.min(100,v/r.target*100);
+        const cls = v>r.target+(r.key==="Synergy"?99:2) ? "over" : v>=r.target ? "ok" : "";
+        return `<div class="role"><span>${r.key}</span><span class="bar"><i class="${cls}" style="width:${pct}%"></i></span><span>${v} / ${r.target}</span></div>`;}).join("")}
+    </div></div>
+    <div class="btnrow">
+      <button class="btn" id="importB">Import list</button>
+      <button class="btn" id="exportB">Export</button>
+      <button class="btn" id="fillB">Top up basic lands</button>
+      <button class="btn" id="autoB" title="Sort every card into a role using Scryfall's tags">Auto-assign roles</button>
+      <button class="btn" id="clearB">Clear deck</button>
+    </div>
+    <div id="exportBox" hidden></div>
+    <label for="deckFilter" class="sr">Filter this deck</label>
+    <input type="text" id="deckFilter" placeholder="Filter this deck…" value="${esc(deckFilter)}">
+    <div id="deckLines" style="display:flex;flex-direction:column;gap:12px">
+    ${d.commander ? `<div class="group"><h3><span>Commander</span><span>1</span></h3>${line(d.commander,"cmdr")}</div>` : ""}
+    ${ROLES.map(r=>byRole[r.key].length ? `<div class="group"><h3><span>${r.key}</span><span>${roleN(r.key)}</span></h3>
+      ${byRole[r.key].sort((a,b)=>a.cmc-b.cmc||a.name.localeCompare(b.name)).map(c=>line(c,"main")).join("")}</div>` : "").join("")}
+    ${d.maybe.length ? `<div class="group"><h3><span>Maybeboard</span><span>${d.maybe.length}</span></h3>
+      ${d.maybe.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>line(c,"maybe")).join("")}</div>` : ""}
+    </div>
+    ${d.cards.length ? "" : `<p class="muted">No cards yet. Pick a theme or tag and click Add, or import a list you already have. Maybe sends a card to the maybeboard while you decide.</p>`}`;
+  $("importB").onclick = openImport;
+  $("exportB").onclick = showExport;
+  $("fillB").onclick = fillBasics;
+  $("autoB").onclick = async ()=>{ $("autoB").textContent = "Sorting…"; await tagPass(true); toast("Roles assigned from Scryfall tags"); };
+  $("clearB").onclick = ()=>{
+    const b = $("clearB");
+    if(b.dataset.armed){ d.cards = []; d.maybe = []; save(); renderDeck(); renderResults(); return; }
+    b.dataset.armed = 1; b.textContent = "Click again to clear"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.armed; b.textContent="Clear deck"; } }, 3000);
+  };
+  const applyFilter = ()=>{
+    const q = deckFilter.toLowerCase();
+    box.querySelectorAll(".line").forEach(l=>{ l.hidden = !!q && !l.dataset.name.toLowerCase().includes(q); });
+  };
+  $("deckFilter").oninput = e=>{ deckFilter = e.target.value; applyFilter(); };
+  applyFilter();
+  box.querySelectorAll("[data-role]").forEach(s=>s.onchange = ()=>{
+    const c = d.cards.find(x=>x.name===s.dataset.role); c.role = s.value; delete c.autoRole; save(); renderDeck();
+  });
+  box.querySelectorAll("[data-rm]").forEach(b=>b.onclick = ()=>removeCard(b.dataset.rm));
+  box.querySelectorAll("[data-rmmaybe]").forEach(b=>b.onclick = ()=>removeMaybe(b.dataset.rmmaybe));
+  box.querySelectorAll("[data-promote]").forEach(b=>b.onclick = ()=>promoteMaybe(b.dataset.promote));
+  bindHover(box);
+}
+function line(c, kind){
+  const name = esc(c.name);
+  const tail = kind === "cmdr" ? "<span></span><span></span>"
+    : kind === "maybe" ? `<button class="btn small" data-promote="${name}">Add</button><button class="x" data-rmmaybe="${name}" aria-label="Remove ${name} from maybeboard">×</button>`
+    : `<select data-role="${name}" aria-label="Role for ${name}">${ROLES.map(r=>`<option ${r.key===c.role?"selected":""}>${r.key}</option>`).join("")}</select>
+       <button class="x" data-rm="${name}" aria-label="Remove ${name}">×</button>`;
+  return `<div class="line" data-name="${name}">
+    <span class="qty">${c.qty||1}</span>
+    <span class="nm" data-img="${c.img||""}">${name} ${mana(c.mana_cost)}${flagBadges(c.name)}</span>
+    ${tail}</div>`;
+}
+
+/* ----- maybeboard ----- */
+function inMaybe(name){ return (deck().maybe||[]).some(c=>c.name===name); }
+function addMaybe(c){
+  const d = deck(); d.maybe ||= [];
+  if(inDeck(c.name) || inMaybe(c.name)){ toast(`${c.name} is already listed`); return; }
+  const {edh: _drop, ...card} = c;
+  d.maybe.push(card); save(); renderDeck(); renderResults(); toast(`${c.name} added to the maybeboard`);
+}
+function removeMaybe(name){ const d = deck(); d.maybe = d.maybe.filter(c=>c.name!==name); save(); renderDeck(); renderResults(); }
+function promoteMaybe(name){
+  const d = deck(), c = d.maybe.find(x=>x.name===name); if(!c) return;
+  if(count() >= 100){ toast("The deck already has 100 cards"); return; }
+  d.maybe = d.maybe.filter(x=>x.name!==name);
+  addCard({...c, autoRole:true}, "Synergy");
+}
+
+/* ----- export ----- */
+function showExport(){
+  const d = deck(), box = $("exportBox");
+  const ln = c => `${c.qty||1} ${c.name}`;
+  const plain = [d.commander && ln(d.commander), ...d.cards.map(ln)].filter(Boolean).join("\n");
+  const sections = [d.commander ? `Commander\n${ln(d.commander)}` : "", `Deck\n${d.cards.map(ln).join("\n")}`,
+    d.maybe.length ? `Maybeboard\n${d.maybe.map(ln).join("\n")}` : ""].filter(Boolean).join("\n\n");
+  box.hidden = false;
+  box.innerHTML = `<div class="btnrow" style="margin-bottom:6px">
+      <button class="btn small" id="exPlain" aria-pressed="true">Plain list</button>
+      <button class="btn small" id="exSec">With sections</button></div>
+    <p class="fine" id="exNote" style="margin-bottom:6px">Commander on the first line. Pastes into Moxfield, Archidekt, MTGO and Arena.</p>
+    <textarea id="exportTxt" readonly>${esc(plain)}</textarea>
+    <button class="btn" id="copyB" style="margin-top:6px">Copy</button>`;
+  const set = (txt, note)=>{ $("exportTxt").value = txt; $("exNote").textContent = note; };
+  $("exPlain").onclick = ()=>set(plain, "Commander on the first line. Pastes into Moxfield, Archidekt, MTGO and Arena.");
+  $("exSec").onclick = ()=>set(sections, "Commander, Deck and Maybeboard headings, so the maybeboard comes along.");
+  $("copyB").onclick = async ()=>{
+    try{ await navigator.clipboard.writeText($("exportTxt").value); toast("Copied"); }
+    catch(e){ $("exportTxt").select(); toast("Press Ctrl+C to copy"); }
+  };
+}
+
+/* ----- import ----- */
+function basicColor(name){
+  const n = name.toLowerCase();
+  return n.endsWith("plains") ? "W" : n.endsWith("island") ? "U" : n.endsWith("swamp") ? "B" : n.endsWith("mountain") ? "R" : n.endsWith("forest") ? "G" : n === "wastes" ? "C" : null;
+}
+function makeBasic(name, qty){
+  const col = basicColor(name);
+  return {id:"basic-"+name, name, basic:true, color:col, qty, cmc:0, mana_cost:"", type_line:"Basic Land — "+name, ci:[], price:0, img:"", role:"Lands", oracle:"", produced:[col], tags:[]};
+}
+function openImport(){
+  const dl = $("dlg");
+  dl.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;width:min(560px,86vw)">
+    <h2>Import a deck list</h2>
+    <p class="muted" style="margin:0">Paste a list from Moxfield, Archidekt, MTGO or Arena. Lines like <code>1 Sol Ring</code> or <code>1x Sol Ring (C21) 263</code> work. A Commander heading or <code>*CMDR*</code> marks the commander; Maybeboard or Sideboard headings go to the maybeboard.</p>
+    <label for="impTxt" class="sr">Deck list</label>
+    <textarea id="impTxt" style="min-height:240px" placeholder="Commander&#10;1 Meren of Clan Nel Toth&#10;&#10;Deck&#10;1 Sol Ring&#10;1 Sakura-Tribe Elder&#10;…"></textarea>
+    <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="impNew" checked> Import as a new deck</label>
+    <p class="muted" id="impMsg" style="margin:0"></p>
+    <div class="btnrow"><button class="btn primary" id="impGo">Import</button><button class="btn" id="impCancel">Cancel</button></div></div>`;
+  $("impCancel").onclick = ()=>dl.close();
+  $("impGo").onclick = async ()=>{
+    const txt = $("impTxt").value; if(!txt.trim()){ $("impMsg").textContent = "Paste a deck list first."; return; }
+    $("impGo").disabled = true; $("impMsg").textContent = "Looking up cards on Scryfall…";
+    try{
+      const r = await importList(txt, $("impNew").checked);
+      dl.close();
+      toast(`Imported ${r.count} cards${r.missing.length ? `. Not found: ${r.missing.slice(0,3).join(", ")}${r.missing.length>3?"…":""}` : ""}`);
+    }catch(e){ $("impMsg").textContent = "Couldn't reach Scryfall. Check your connection and try again."; $("impGo").disabled = false; }
+  };
+  dl.showModal();
+}
+function parseList(text){
+  const out = []; let section = "main";
+  for(const raw of text.split(/\r?\n/)){
+    const s = raw.trim(); if(!s) continue;
+    const h = s.replace(/^\/\/\s*/,"").replace(/:$/,"").replace(/\s*\(\d+\)$/,"").trim().toLowerCase();
+    if(/^commanders?$/.test(h)){ section = "cmdr"; continue; }
+    if(/^(deck|main|mainboard|main deck|companion|about|name .*)$/.test(h)){ section = "main"; continue; }
+    if(/^(maybeboard|maybe|sideboard|considering)$/.test(h)){ section = "maybe"; continue; }
+    if(s.startsWith("//") || s.startsWith("#")) continue;
+    const m = s.match(/^(\d+)\s*x?\s+(.+)$/i);
+    let name = m ? m[2] : s;
+    const isCmdr = /\*cmdr\*/i.test(name);
+    name = name.replace(/\s+\*[^*]+\*/g,"").replace(/\s+\([A-Za-z0-9]{2,6}\)(\s+\S+)?\s*$/,"").replace(/\s+\[[^\]]+\]\s*$/,"").replace(/\s+#\S+$/,"").trim();
+    if(name) out.push({qty: m ? +m[1] : 1, name, section: isCmdr ? "cmdr" : section});
+  }
+  return out;
+}
+async function importList(text, asNew){
+  const entries = parseList(text);
+  const nonBasic = entries.filter(e=>!basicColor(e.name));
+  const found = await cardsByName(nonBasic.map(e=>e.name));
+  const look = n => byName.get(n) || byName.get(n.split(" // ")[0]);
+  const missing = nonBasic.filter(e=>!look(e.name)).map(e=>e.name);
+  let cmdrEntry = entries.find(e=>e.section === "cmdr");
+  if(!cmdrEntry){
+    const first = entries[0], l = first && look(first.name);
+    const total = entries.filter(e=>e.section!=="maybe").reduce((s,e)=>s+e.qty,0);
+    if(l && /Legendary.*Creature/.test(l.type_line) && total >= 95) cmdrEntry = first;
+  }
+  const deckObj = {name:"Imported deck", commander:null, cards:[], maybe:[], theme:null, target:3};
+  if(cmdrEntry && look(cmdrEntry.name)){ deckObj.commander = {...look(cmdrEntry.name)}; deckObj.name = deckObj.commander.name.split(",")[0].split(" // ")[0]; }
+  const seen = new Set(deckObj.commander ? [deckObj.commander.name] : []);
+  for(const e of entries){
+    if(e === cmdrEntry) continue;
+    if(basicColor(e.name)){
+      if(e.section === "maybe") continue;
+      const ex = deckObj.cards.find(c=>c.basic && c.name.toLowerCase() === e.name.toLowerCase());
+      ex ? ex.qty += e.qty : deckObj.cards.push(makeBasic(e.name.replace(/\b\w/g, ch=>ch.toUpperCase()), e.qty));
+      continue;
+    }
+    const l = look(e.name); if(!l || seen.has(l.name)) continue;
+    seen.add(l.name);
+    if(e.section === "maybe") deckObj.maybe.push({...l});
+    else deckObj.cards.push({...l, role: isLand(l) ? "Lands" : "Synergy", autoRole:true});
+  }
+  if(asNew){ const id = uid(); store.decks[id] = deckObj; store.current = id; }
+  else { const d = deck(); Object.assign(d, {commander:deckObj.commander, cards:deckObj.cards, maybe:deckObj.maybe}); if(d.name === "New deck") d.name = deckObj.name; }
+  save(); renderAll(); runSearch();
+  return {count: deckObj.cards.reduce((s,c)=>s+(c.qty||1),0) + (deckObj.commander?1:0), missing};
+}
+
+/* ----- tagging: Scryfall tags per card, used for roles, tutors and interaction ----- */
+const TAG_QUERIES = {ramp:"otag:ramp", draw:"(otag:card-advantage or otag:draw)", removal:"(otag:removal or otag:counterspell)", wipe:"otag:board-wipe", tutor:"otag:tutor"};
+let tagTimer, tagging = false;
+function scheduleTagging(){ clearTimeout(tagTimer); tagTimer = setTimeout(()=>tagPass(false), 1500); }
+function roleFromTags(c){
+  if(isLand(c)) return "Lands";
+  const t = c.tags || [];
+  return t.includes("wipe") ? "Board wipes" : t.includes("removal") ? "Removal" : t.includes("ramp") ? "Ramp" : t.includes("draw") ? "Card draw" : "Synergy";
+}
+async function tagPass(reassign){
+  if(tagging) return;
+  const d = deck();
+  const todo = d.cards.filter(c=>!c.basic && (!c.tags || !c.produced));
+  if(!todo.length && !reassign) return;
+  tagging = true;
+  try{
+    const noProduced = todo.filter(c=>!c.produced);
+    if(noProduced.length){
+      await cardsByName(noProduced.map(c=>c.name));
+      noProduced.forEach(c=>{ const f = byName.get(c.name); c.produced = (f && f.produced) || []; });
+    }
+    const untagged = todo.filter(c=>!c.tags);
+    if(untagged.length){
+      const found = new Map(untagged.map(c=>[c.name, []]));
+      for(const [tag, q] of Object.entries(TAG_QUERIES)){
+        for(let i=0; i<untagged.length; i+=20){
+          const chunk = untagged.slice(i, i+20);
+          const names = chunk.map(c=>`!"${c.name.split(" // ")[0].replace(/"/g,"")}"`).join(" or ");
+          const r = await sf(`${API}/cards/search?q=${encodeURIComponent(`${q} (${names})`)}`);
+          (r.data||[]).forEach(card=>{ const hit = chunk.find(x=>x.name === card.name || x.name.split(" // ")[0] === card.name.split(" // ")[0]); if(hit) found.get(hit.name).push(tag); });
+        }
+      }
+      untagged.forEach(c=>{ c.tags = found.get(c.name); if(c.autoRole){ c.role = roleFromTags(c); delete c.autoRole; } });
+    }
+    if(reassign) d.cards.forEach(c=>{ if(!c.basic){ c.role = roleFromTags(c); delete c.autoRole; } });
+    save();
+  }catch(e){ /* leave cards untagged; the next change retries */ }
+  finally{ tagging = false; }
+  if(deck() === d) renderDeck();
+}
+
+/* ----- analysis: bracket, power, salt ----- */
+const FAST_MANA = new Set(["Sol Ring","Mana Crypt","Mana Vault","Chrome Mox","Mox Diamond","Mox Opal","Mox Amber","Jeweled Lotus","Lotus Petal","Grim Monolith","Ancient Tomb","Dark Ritual","Cabal Ritual","Simian Spirit Guide","Elvish Spirit Guide","Lion's Eye Diamond","Gemstone Caverns","Rite of Flame","Culling the Weak","Carpet of Flowers","Mox Tantalite","Springleaf Drum"]);
+let saltMap = new Map();
+async function loadSalt(){
+  try{
+    const j = await edhJson("top/salt");
+    (j.container?.json_dict?.cardlists?.[0]?.cardviews || []).forEach(v=>saltMap.set(v.name, v.salt));
+  }catch(e){}
+}
+function analysis(){
+  const d = deck(), all = [d.commander, ...d.cards].filter(Boolean), names = all.map(c=>c.name);
+  const gc = names.filter(n=>flags.gc.has(n)), mld = names.filter(n=>flags.mld.has(n)), turns = names.filter(n=>flags.turns.has(n));
+  const two = combos.list.filter(c=>c.cards.length <= 2), more = combos.list.filter(c=>c.cards.length > 2);
+  let est = 2;
+  if(gc.length) est = Math.max(est, gc.length > 3 ? 4 : 3);
+  if(two.length) est = Math.max(est, 3);
+  if(mld.length) est = 4;
+
+  const tagged = d.cards.filter(c=>c.tags);
+  const has = t => d.cards.filter(c=>c.tags && c.tags.includes(t)).reduce((s,c)=>s+(c.qty||1),0);
+  const fast = names.filter(n=>FAST_MANA.has(n));
+  // land searchers (Cultivate, Sakura-Tribe Elder) carry the tutor tag too; count them as ramp only
+  const tutors = d.cards.filter(c=>c.tags && c.tags.includes("tutor") && !c.tags.includes("ramp")).length, interaction = has("removal") + has("wipe"), ramp = has("ramp");
+  const nonland = d.cards.filter(c=>!isLand(c));
+  const avg = nonland.length ? nonland.reduce((s,c)=>s+c.cmc,0)/nonland.length : 0;
+  let power = 4; const why = [];
+  const add = (v, label)=>{ power += v; why.push({v, label}); };
+  add(Math.min(2, fast.length*0.4), `${fast.length} fast mana${fast.length ? ": " + fast.join(", ") : ""}`);
+  add(Math.min(1.5, tutors*0.25), `${tutors} tutors`);
+  add(Math.min(1.5, gc.length*0.3), `${gc.length} Game Changers`);
+  add(two.length >= 3 ? 1.5 : two.length ? 1 : 0, `${two.length} two-card combos`);
+  add(interaction >= 12 ? 0.5 : (interaction < 6 && nonland.length > 40) ? -0.5 : 0, `${interaction} removal and wipes`);
+  add(nonland.length > 20 ? (avg < 2.5 ? 0.75 : avg > 3.5 ? -0.75 : 0) : 0, `average mana value ${avg ? avg.toFixed(2) : "—"}`);
+  add(ramp >= 10 ? 0.25 : 0, `${ramp} ramp pieces`);
+  power = Math.max(1, Math.min(10, Math.round(power*10)/10));
+
+  const salty = all.filter(c=>saltMap.has(c.name)).map(c=>({name:c.name, salt:saltMap.get(c.name)})).sort((a,b)=>b.salt-a.salt);
+  const salt = salty.reduce((s,c)=>s+c.salt,0);
+  return {gc, mld, turns, two, more, est, power, why, fast, tutors, interaction, avg, salt, salty, taggedShare: d.cards.length ? tagged.length/d.cards.length : 1};
+}
+const POWER_LABEL = p => p < 4 ? "Casual" : p < 6.5 ? "Focused" : p < 8.5 ? "Optimized" : p < 9.5 ? "High power" : "cEDH";
+
+/* ----- Analysis tab ----- */
+function renderStats(){
+  const d = deck(), box = $("tabBody"), a = analysis();
+  const nonland = d.cards.filter(c=>!isLand(c));
+  const curve = Array(8).fill(0);
+  nonland.forEach(c=>curve[Math.min(7,Math.floor(c.cmc))] += (c.qty||1));
+  const peak = Math.max(1,...curve);
+  const cols = (d.commander && d.commander.ci.length) ? d.commander.ci : ["W","U","B","R","G"].filter(x=>d.cards.some(c=>c.ci.includes(x)));
+  const pips = Object.fromEntries(cols.map(x=>[x,0])), src = Object.fromEntries(cols.map(x=>[x,0]));
+  nonland.forEach(c=>(c.mana_cost||"").replace(/\{([^}]+)\}/g,(m,s)=>{ s.split("/").forEach(p=>{ if(p in pips) pips[p] += (c.qty||1); }); return m; }));
+  d.cards.filter(c=>isLand(c) || c.tags?.includes("ramp")).forEach(c=>(c.produced||[]).forEach(p=>{ if(p in src) src[p] += (c.qty||1); }));
+  const pipTotal = Object.values(pips).reduce((s,v)=>s+v,0) || 1, srcTotal = Object.values(src).reduce((s,v)=>s+v,0) || 1;
+  const TYPES = ["Creature","Instant","Sorcery","Artifact","Enchantment","Planeswalker","Battle","Land"];
+  const types = Object.fromEntries(TYPES.map(t=>[t,0]));
+  d.cards.forEach(c=>{ const t = TYPES.find(t=>c.type_line.includes(t)) || "Artifact"; types[t] += (c.qty||1); });
+  const tpeak = Math.max(1,...Object.values(types));
+  box.innerHTML = `
+    <div class="bracket">
+      <div class="counts"><h3>Power estimate</h3><span class="fine">CommanderSalt-style, rough</span></div>
+      <div class="bnum"><span class="big">${a.power.toFixed(1)}</span><strong>${POWER_LABEL(a.power)}</strong><span class="muted">out of 10</span></div>
+      <ul class="warns">${a.why.map(w=>`<li class="${w.v>0?"warn":w.v<0?"ok":""}"><b>${w.v>0?"+":w.v<0?"−":"±"}${Math.abs(w.v).toFixed(2)}</b> ${esc(w.label)}</li>`).join("")}</ul>
+      <p class="fine">Starts at 4 and adds for fast mana, tutors, Game Changers, two-card combos, lots of interaction, a low curve and plenty of ramp.${a.taggedShare < 1 ? " Still reading Scryfall tags for some cards, so tutor and interaction counts may rise." : ""} Use it to compare your own decks, not as an official rating.</p>
+    </div>
+    <div class="bracket" id="bracket"></div>
+    <div class="bracket">
+      <div class="counts"><h3>Salt</h3><span class="fine">From EDHREC's 100 saltiest cards</span></div>
+      <div class="bnum"><span class="big">${a.salt.toFixed(1)}</span><span class="muted">${a.salty.length ? `${a.salty.length} salty card${a.salty.length>1?"s":""}` : "No cards from the salt list"}</span></div>
+      ${a.salty.length ? `<ul class="warns">${a.salty.slice(0,8).map(s=>`<li class="${s.salt>=2.5?"bad":"warn"}"><b>${s.salt.toFixed(2)}</b> ${esc(s.name)}</li>`).join("")}</ul>` : ""}
+      <p class="fine">Salt is how much EDHREC users say a card annoys them, scored 0–4.</p>
+    </div>
+    <div><h3 style="margin-bottom:8px">Mana curve (non-land) · average ${a.avg ? a.avg.toFixed(2) : "—"}</h3><div class="curve">
+      ${curve.map((v,i)=>`<div><em>${v||""}</em><b style="height:${v/peak*70}px"></b>${i===7?"7+":i}</div>`).join("")}
+    </div></div>
+    <div><h3 style="margin-bottom:8px">Colors: cost symbols vs. mana sources</h3>
+      ${cols.length ? `<table class="tbl"><thead><tr><th>Color</th><th>Symbols</th><th>Share</th><th>Sources</th><th>Share</th></tr></thead><tbody>
+      ${cols.map(x=>{ const ps = pips[x]/pipTotal, ss = src[x]/srcTotal, low = ps - ss > 0.12;
+        return `<tr class="${low?"lowsrc":""}"><td><img class="ms" alt="${x}" src="${SYM(x)}"></td><td>${pips[x]}</td><td>${Math.round(ps*100)}%</td><td>${src[x]}</td><td>${Math.round(ss*100)}%${low?' <span class="badge lo" title="This color needs more sources">Low</span>':""}</td></tr>`; }).join("")}
+      </tbody></table><p class="fine">Sources count lands and ramp that make each color. Aim for each color's source share to roughly match its symbol share.</p>` : `<p class="muted">Pick a commander to see color balance.</p>`}
+    </div>
+    <div><h3 style="margin-bottom:8px">Card types</h3><div class="roles">
+      ${TYPES.filter(t=>types[t]).map(t=>`<div class="role"><span>${t}</span><span class="bar"><i class="ok" style="width:${types[t]/tpeak*100}%;background:var(--accent)"></i></span><span>${types[t]}</span></div>`).join("") || `<p class="muted">No cards yet.</p>`}
+    </div></div>
+    <div><h3 style="margin-bottom:8px">One card away</h3><div id="almost"></div></div>`;
+  renderBracket(); renderAlmost();
+}
+function renderAlmost(){
+  const box = $("almost"); if(!box) return;
+  const list = combos.almost || [];
+  if(combos.loading){ box.innerHTML = `<p class="muted">Checking Commander Spellbook…</p>`; return; }
+  if(!list.length){ box.innerHTML = `<p class="muted">${combos.error ? "Couldn't reach Commander Spellbook." : "No combos are one card away. Add more cards to see suggestions."}</p>`; return; }
+  box.innerHTML = `<ul class="warns">${list.slice(0,10).map((c,i)=>`<li>
+      <b>Add ${esc(c.missing.join(" + "))}</b>
+      <div>${esc(c.cards.join(" + "))} <span class="why">→ ${esc(c.produces.slice(0,2).join(", ") || "combo")}</span></div>
+      <div class="btnrow" style="margin-top:4px"><button class="btn small primary" data-al="${i}">Add to deck</button><button class="btn small" data-alm="${i}">Maybe</button>
+      <a class="fine" href="https://commanderspellbook.com/combo/${encodeURIComponent(c.id)}/" target="_blank" rel="noopener">How it works</a></div></li>`).join("")}</ul>
+    <p class="fine">Combos from Commander Spellbook that your deck completes with one more card, most popular first. Check the bracket section before adding one.</p>`;
+  const go = async (i, maybe)=>{
+    const cards = await cardsByName(list[i].missing);
+    cards.forEach(c=> maybe ? addMaybe(c) : addCard({...c, autoRole:true}, "Synergy"));
+  };
+  box.querySelectorAll("[data-al]").forEach(b=>b.onclick = ()=>go(+b.dataset.al, false));
+  box.querySelectorAll("[data-alm]").forEach(b=>b.onclick = ()=>go(+b.dataset.alm, true));
+}
+
+/* ----- combos (Commander Spellbook) ----- */
+let comboTimer;
+function scheduleCombos(){ clearTimeout(comboTimer); comboTimer = setTimeout(checkCombos, 1200); }
+function refreshAnalysis(){ renderQuick(); if(deckTab === "stats"){ renderBracket(); renderAlmost(); } }
+async function checkCombos(){
+  const d = deck();
+  const names = d.cards.filter(c=>!c.basic).map(c=>c.name);
+  const key = (d.commander ? d.commander.name : "") + "|" + names.slice().sort().join("|");
+  if(key === combos.key && !combos.error) return;
+  if(!names.length){ combos = {key, list:[], almost:[], loading:false, error:false}; refreshAnalysis(); return; }
+  combos.loading = true; refreshAnalysis();
+  try{
+    const r = await fetch(SPELLBOOK, {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({commanders: d.commander ? [{card:d.commander.name}] : [], main: names.map(card=>({card}))})});
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    if(deck() !== d) return;
+    const have = new Set([...(d.commander ? [d.commander.name] : []), ...names]);
+    const map = v=>({ id: v.id, cards: v.uses.map(u=>u.card.name), produces: (v.produces||[]).map(p=>p.feature?.name).filter(Boolean), popularity: v.popularity || 0, identity: v.identity || "" });
+    const fits = c=> !d.commander || [...c.identity.replace(/C/g,"")].every(x=>d.commander.ci.includes(x));
+    combos = {key, loading:false, error:false,
+      list: (j.results?.included || []).map(map),
+      almost: (j.results?.almostIncluded || []).map(map).map(c=>({...c, missing: c.cards.filter(n=>!have.has(n))}))
+        .filter(c=>c.missing.length === 1 && fits(c)).sort((a,b)=>b.popularity-a.popularity)};
+  }catch(e){ combos = {key, list:[], almost:[], loading:false, error:true}; }
+  refreshAnalysis();
+}
+function renderBracket(){
+  const box = $("bracket"); if(!box) return;
+  const d = deck(), target = d.target || 3, a = analysis();
+  const items = [];
+  const list = arr => esc(arr.join(", "));
+  const comboLine = c => `${esc(c.cards.join(" + "))} <span class="why">→ ${esc(c.produces.slice(0,2).join(", ") || "combo")}</span> <a href="https://commanderspellbook.com/combo/${encodeURIComponent(c.id)}/" target="_blank" rel="noopener">details</a>`;
+  if(a.gc.length) items.push({lvl: (target <= 2 || (target === 3 && a.gc.length > 3)) ? "bad" : "ok",
+    head:`Game Changers: ${a.gc.length}`, body:list(a.gc), why:"Brackets 1–2 allow none. Bracket 3 allows up to 3. Brackets 4–5 have no limit."});
+  if(a.mld.length) items.push({lvl: target <= 3 ? "bad" : "ok", head:`Mass land denial: ${a.mld.length}`, body:list(a.mld), why:"Only allowed in Brackets 4–5."});
+  if(a.turns.length) items.push({lvl: target <= 3 && a.turns.length > 1 ? "warn" : "ok", head:`Extra turns: ${a.turns.length}`, body:list(a.turns), why:"Brackets 1–3 don't allow chaining extra turns, and Brackets 1–2 expect few of them."});
+  if(a.two.length) items.push({lvl: target <= 2 ? "bad" : target === 3 ? "warn" : "ok", head:`Two-card combos: ${a.two.length}`, body:a.two.map(comboLine).join("<br>"),
+    why:"Brackets 1–2 allow none. Bracket 3 allows them only if they can't go off early. Brackets 4–5 have no limit."});
+  if(a.more.length) items.push({lvl:"ok", head:`Combos with 3+ cards: ${a.more.length}`, body:a.more.slice(0,6).map(comboLine).join("<br>") + (a.more.length > 6 ? `<br><span class="why">and ${a.more.length-6} more</span>` : ""), why:"Allowed in every bracket, but worth knowing about."});
+  if(!items.length) items.push({lvl:"ok", head:"Nothing flagged", body:"", why:"No Game Changers, mass land denial, extra turns or combos found yet."});
+  box.innerHTML = `
+    <div class="counts"><h3>Bracket</h3>
+      <label class="muted" style="font-size:12px">Target
+        <select id="targetSel">${[1,2,3,4,5].map(b=>`<option value="${b}" ${b===target?"selected":""}>${b} · ${BRACKETS[b]}</option>`).join("")}</select></label></div>
+    <div class="bnum"><span class="big">${a.est}</span><strong>${BRACKETS[a.est]}</strong><span class="muted">estimated minimum${a.est > target ? ` · above your target of ${target}` : ""}</span></div>
+    <ul class="warns">${items.map(i=>`<li class="${i.lvl}"><b>${i.head}</b>${i.body ? `<div>${i.body}</div>` : ""}<div class="why">${i.why}</div></li>`).join("")}</ul>
+    <p class="fine">${combos.loading ? "Checking Commander Spellbook for combos… " : combos.error ? "Couldn't reach Commander Spellbook, so combos weren't checked. " : ""}This estimate only checks Game Changers, land denial, extra turns and combos. Bracket 1 depends on your deck's theme and intent, which only you can judge.</p>`;
+  $("targetSel").onchange = e=>{ d.target = +e.target.value; save(); renderBracket(); renderQuick(); };
+}
+
+/* ----- Playtest tab ----- */
+let play = null;
+function shuffle(arr){
+  const a = arr.slice(), r = new Uint32Array(a.length);
+  crypto.getRandomValues(r);
+  for(let i=a.length-1; i>0; i--){ const j = r[i] % (i+1); [a[i],a[j]] = [a[j],a[i]]; }
+  return a;
+}
+function newHand(mull){
+  const d = deck();
+  const lib = shuffle(d.cards.flatMap(c=>Array.from({length:c.qty||1}, ()=>c)));
+  play = {lib: lib.slice(7), hand: lib.slice(0,7), mulls: mull ? (play ? play.mulls + 1 : 1) : 0, turn: 0, key: store.current};
+}
+function renderPlay(){
+  const d = deck(), box = $("tabBody");
+  if(d.cards.length < 7){ box.innerHTML = `<p class="muted">Add at least 7 cards to draw sample hands.</p>`; return; }
+  if(!play || play.key !== store.current) newHand(false);
+  const lands = play.hand.filter(isLand).length;
+  box.innerHTML = `
+    <div class="btnrow">
+      <button class="btn primary" id="pNew">New hand</button>
+      <button class="btn" id="pMull">Mulligan</button>
+      <button class="btn" id="pDraw" ${play.lib.length ? "" : "disabled"}>Draw a card</button>
+    </div>
+    <div class="counts muted" style="font-size:13px"><span>${play.turn ? `Turn ${play.turn + 1} · ` : "Opening hand · "}${lands} land${lands===1?"":"s"} in hand</span><span>${play.lib.length} in library</span></div>
+    ${play.mulls ? `<p class="fine">Mulligan ${play.mulls}: under the London mulligan, ${play.mulls === 1 ? "your first mulligan in a multiplayer game is free, so keep all 7." : `the first mulligan is free, so put ${play.mulls-1} card${play.mulls-1===1?"":"s"} from this hand on the bottom.`}</p>` : ""}
+    <div class="hand">${play.hand.map((c,i)=>c.img
+      ? `<img src="${c.img}" alt="${esc(c.name)}" title="${esc(c.name)}" class="${i>=7?"drawn":""}">`
+      : `<div class="tile ${i>=7?"drawn":""}">${esc(c.name)}</div>`).join("")}</div>
+    <p class="fine">Command zone: ${d.commander ? esc(d.commander.name) : "no commander set"}. Cards drawn after the opening hand are outlined.</p>`;
+  $("pNew").onclick = ()=>{ newHand(false); renderPlay(); };
+  $("pMull").onclick = ()=>{ newHand(true); renderPlay(); };
+  $("pDraw").onclick = ()=>{ if(play.lib.length){ play.hand.push(play.lib.shift()); play.turn++; renderPlay(); } };
+}
+
+/* ---------- deck switcher ---------- */
+function renderDeckSel(){
+  $("deckSel").innerHTML = Object.entries(store.decks).map(([id,d])=>`<option value="${id}" ${id===store.current?"selected":""}>${esc(d.name)}</option>`).join("");
+}
+$("deckSel").onchange = e=>{ store.current = e.target.value; save(); renderAll(); runSearch(); };
+$("newDeck").onclick = ()=>{ const id = uid(); store.decks[id] = {name:"New deck", commander:null, cards:[]}; store.current = id; save(); renderAll(); runSearch(); };
+$("renameDeck").onclick = ()=>{
+  const sel = $("deckSel"), inp = document.createElement("input");
+  inp.type = "text"; inp.id = "renameInp"; inp.value = deck().name; inp.style.width = "180px";
+  sel.replaceWith(inp); inp.focus(); inp.select();
+  const done = ()=>{ if(inp.value.trim()) deck().name = inp.value.trim(); save(); inp.replaceWith(sel); renderAll(); };
+  inp.onkeydown = e=>{ if(e.key==="Enter") done(); if(e.key==="Escape"){ inp.replaceWith(sel); } };
+  inp.onblur = done;
+};
+$("delDeck").onclick = ()=>{
+  const b = $("delDeck");
+  if(!b.dataset.armed){ b.dataset.armed = 1; b.textContent = "Click again to delete"; setTimeout(()=>{ delete b.dataset.armed; b.textContent = "Delete"; }, 3000); return; }
+  delete b.dataset.armed; b.textContent = "Delete";
+  delete store.decks[store.current];
+  if(!Object.keys(store.decks).length){ const id = uid(); store.decks[id] = {name:"New deck", commander:null, cards:[]}; }
+  store.current = Object.keys(store.decks)[0]; save(); renderAll(); runSearch();
+};
+
+function renderAll(){ renderDeckSel(); renderCommander(); loadEdhrec(); renderCats(); renderThemes(); renderDeck(); }
+
+/* ---------- boot: start with an example commander so the page opens working ---------- */
+(async function boot(){
+  renderAll();
+  if(!deck().commander){
+    try{
+      const c = await sf(`${API}/cards/named?exact=${encodeURIComponent("Meren of Clan Nel Toth")}`);
+      if(c.object === "card"){ deck().commander = lite(c); deck().name = "Meren (example)"; save(); renderAll(); }
+    }catch(e){}
+  }
+  if(deck().theme) setTheme(deck().theme); else runSearch();
+  loadThemeIndex();
+  await loadSalt();
+  await loadFlags();
+  renderDeck(); renderResults();
+})();
+</script>
+</body>
+</html>
