@@ -105,6 +105,11 @@ input[type=text],input[type=number],select{background:var(--sunk);border:1px sol
 .line{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto;gap:6px;align-items:center;padding:3px 0;font-size:13px}
 .line .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
 .line select{font-size:11px;padding:2px 4px}
+.rolebtn{font-size:11px;padding:2px 8px;border:1px solid var(--line);background:var(--sunk);border-radius:999px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.rolebtn:hover{border-color:var(--accent)}
+.rolebtn.multi{border-color:var(--accent);color:var(--accent);font-weight:600}
+.roleedit{display:flex;flex-wrap:wrap;gap:4px;padding:2px 0 8px 30px}
+.roleedit .chip{font-size:11px;padding:2px 9px}
 .line .x{border:0;background:none;color:var(--muted);font-size:16px;padding:0 4px}
 .line .x:hover{color:var(--bad)}
 .qty{font-variant-numeric:tabular-nums;color:var(--muted)}
@@ -753,7 +758,8 @@ function addCard(c, role){
   const {edh: _drop, ...card} = c;
   if(search.mode === "edhrec" && role === "Synergy") card.autoRole = true;
   d.maybe = (d.maybe || []).filter(x=>x.name !== c.name);
-  d.cards.push({...card, role: isLand(c) ? "Lands" : role});
+  delete card.role; delete card.roles;
+  d.cards.push({...card, roles: isLand(c) ? ["Lands"] : [role]});
   save(); renderDeck(); renderResults();
   const t = d.target || 3;
   const gcN = [d.commander, ...d.cards].filter(x=>x && flags.gc.has(x.name)).length;
@@ -769,7 +775,7 @@ function fillBasics(){
   const d = deck();
   if(!d.commander){ toast("Pick a commander first"); return; }
   d.cards = d.cards.filter(c=>!c.basic);
-  const lands = d.cards.filter(c=>c.role==="Lands").length;
+  const lands = d.cards.filter(c=>rolesOf(c).includes("Lands")).length;
   const landTarget = ROLES.find(r=>r.key==="Lands").target;
   const open = Math.min(100 - count(), landTarget - lands);
   if(open <= 0){ toast("You already have enough lands"); save(); renderDeck(); return; }
@@ -778,7 +784,7 @@ function fillBasics(){
     const qty = Math.floor(open/cols.length) + (i < open % cols.length ? 1 : 0);
     if(!qty) return;
     const name = col==="C" ? "Wastes" : BASICS[col];
-    d.cards.push({id:"basic-"+col, name, basic:true, color:col, qty, cmc:0, mana_cost:"", type_line:"Basic Land — "+name, ci:[], price:0, img:"", role:"Lands", oracle:""});
+    d.cards.push({id:"basic-"+col, name, basic:true, color:col, qty, cmc:0, mana_cost:"", type_line:"Basic Land — "+name, ci:[], price:0, img:"", roles:["Lands"], oracle:"", produced:[col], tags:[]});
   });
   save(); renderDeck(); toast(`Added ${open} basic lands to reach ${landTarget} lands`);
 }
@@ -789,6 +795,13 @@ try{ deckTab = localStorage.getItem("tagtutor-tab") || "deck"; }catch(e){}
 
 function renderDeck(){
   const d = deck(); d.maybe ||= [];
+  // decks saved before multi-role support: turn the single role into a list, adding any roles the tags already show
+  d.cards.forEach(c=>{
+    if(c.roles) return;
+    const base = [c.role || "Synergy"];
+    c.roles = c.tags && !c.basic ? mergeRoles(base, rolesFromTags(c)) : base;
+    delete c.role;
+  });
   const n = count();
   const total = d.cards.reduce((s,c)=>s+c.price*(c.qty||1),0) + (d.commander ? d.commander.price : 0);
   const el = $("deck");
@@ -822,8 +835,10 @@ function bindHover(root){
 function renderDeckList(){
   const d = deck(), box = $("tabBody");
   const byRole = Object.fromEntries(ROLES.map(r=>[r.key,[]]));
-  d.cards.forEach(c=>(byRole[c.role] || byRole.Synergy).push(c));
+  d.cards.forEach(c=>rolesOf(c).forEach(r=>(byRole[r] || byRole.Synergy).push(c)));
   const roleN = k => byRole[k].reduce((s,c)=>s+(c.qty||1),0);
+  const multi = d.cards.filter(c=>rolesOf(c).length > 1).length;
+  const editorShown = new Set();
   const off = d.commander ? d.cards.filter(c=>!c.basic && !c.ci.every(x=>d.commander.ci.includes(x))) : [];
   const extra = d.commander ? count() - 100 : 0;
   const problems = [
@@ -836,7 +851,7 @@ function renderDeckList(){
       ${ROLES.map(r=>{ const v=roleN(r.key), pct=Math.min(100,v/r.target*100);
         const cls = v>r.target+(r.key==="Synergy"?99:2) ? "over" : v>=r.target ? "ok" : "";
         return `<div class="role"><span>${r.key}</span><span class="bar"><i class="${cls}" style="width:${pct}%"></i></span><span>${v} / ${r.target}</span></div>`;}).join("")}
-    </div></div>
+    </div>${multi ? `<p class="fine" style="margin-top:6px">${multi} card${multi>1?"s fill":" fills"} more than one role. They count toward each role and appear in each group below; the deck total counts every card once.</p>` : ""}</div>
     <div class="btnrow">
       <button class="btn" id="importB">Import list</button>
       <button class="btn" id="exportB">Export</button>
@@ -850,7 +865,11 @@ function renderDeckList(){
     <div id="deckLines" style="display:flex;flex-direction:column;gap:12px">
     ${d.commander ? `<div class="group"><h3><span>Commander</span><span>1</span></h3>${line(d.commander,"cmdr")}</div>` : ""}
     ${ROLES.map(r=>byRole[r.key].length ? `<div class="group"><h3><span>${r.key}</span><span>${roleN(r.key)}</span></h3>
-      ${byRole[r.key].sort((a,b)=>a.cmc-b.cmc||a.name.localeCompare(b.name)).map(c=>line(c,"main")).join("")}</div>` : "").join("")}
+      ${byRole[r.key].sort((a,b)=>a.cmc-b.cmc||a.name.localeCompare(b.name)).map(c=>{
+        const open = editingRoles === c.name && !editorShown.has(c.name);
+        if(open) editorShown.add(c.name);
+        return line(c, "main", open);
+      }).join("")}</div>` : "").join("")}
     ${d.maybe.length ? `<div class="group"><h3><span>Maybeboard</span><span>${d.maybe.length}</span></h3>
       ${d.maybe.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>line(c,"maybe")).join("")}</div>` : ""}
     </div>
@@ -870,24 +889,36 @@ function renderDeckList(){
   };
   $("deckFilter").oninput = e=>{ deckFilter = e.target.value; applyFilter(); };
   applyFilter();
-  box.querySelectorAll("[data-role]").forEach(s=>s.onchange = ()=>{
-    const c = d.cards.find(x=>x.name===s.dataset.role); c.role = s.value; delete c.autoRole; save(); renderDeck();
+  box.querySelectorAll("[data-roles]").forEach(b=>b.onclick = ()=>{
+    editingRoles = editingRoles === b.dataset.roles ? null : b.dataset.roles; renderDeckList();
+  });
+  box.querySelectorAll("[data-tog]").forEach(b=>b.onclick = ()=>{
+    const c = d.cards.find(x=>x.name===b.dataset.tog); if(!c) return;
+    const r = b.dataset.r, cur = rolesOf(c);
+    const next = cur.includes(r) ? cur.filter(x=>x!==r) : [...cur, r];
+    if(!next.length){ toast("A card needs at least one role"); return; }
+    c.roles = ROLES.map(x=>x.key).filter(k=>next.includes(k));
+    c.rolesEdited = true; delete c.autoRole; delete c.role;
+    save(); renderDeck();
   });
   box.querySelectorAll("[data-rm]").forEach(b=>b.onclick = ()=>removeCard(b.dataset.rm));
   box.querySelectorAll("[data-rmmaybe]").forEach(b=>b.onclick = ()=>removeMaybe(b.dataset.rmmaybe));
   box.querySelectorAll("[data-promote]").forEach(b=>b.onclick = ()=>promoteMaybe(b.dataset.promote));
   bindHover(box);
 }
-function line(c, kind){
-  const name = esc(c.name);
+let editingRoles = null;
+function line(c, kind, openEditor){
+  const name = esc(c.name), roles = kind === "main" ? rolesOf(c) : [];
   const tail = kind === "cmdr" ? "<span></span><span></span>"
     : kind === "maybe" ? `<button class="btn small" data-promote="${name}">Add</button><button class="x" data-rmmaybe="${name}" aria-label="Remove ${name} from maybeboard">×</button>`
-    : `<select data-role="${name}" aria-label="Role for ${name}">${ROLES.map(r=>`<option ${r.key===c.role?"selected":""}>${r.key}</option>`).join("")}</select>
+    : `<button class="rolebtn${roles.length > 1 ? " multi" : ""}" data-roles="${name}" aria-expanded="${editingRoles === c.name}" title="Roles: ${esc(roles.join(", "))}. Click to change.">${roles.length > 1 ? `${roles.length} roles` : esc(roles[0])} ▾</button>
        <button class="x" data-rm="${name}" aria-label="Remove ${name}">×</button>`;
+  const editor = openEditor ? `<div class="roleedit" role="group" aria-label="Roles for ${name}">${ROLES.map(r=>
+    `<button class="chip" data-tog="${name}" data-r="${r.key}" aria-pressed="${roles.includes(r.key)}">${r.key}</button>`).join("")}</div>` : "";
   return `<div class="line" data-name="${name}">
     <span class="qty">${c.qty||1}</span>
     <span class="nm" data-img="${c.img||""}">${name} ${mana(c.mana_cost)}${flagBadges(c.name)}</span>
-    ${tail}</div>`;
+    ${tail}</div>${editor}`;
 }
 
 /* ----- maybeboard ----- */
@@ -936,7 +967,7 @@ function basicColor(name){
 }
 function makeBasic(name, qty){
   const col = basicColor(name);
-  return {id:"basic-"+name, name, basic:true, color:col, qty, cmc:0, mana_cost:"", type_line:"Basic Land — "+name, ci:[], price:0, img:"", role:"Lands", oracle:"", produced:[col], tags:[]};
+  return {id:"basic-"+name, name, basic:true, color:col, qty, cmc:0, mana_cost:"", type_line:"Basic Land — "+name, ci:[], price:0, img:"", roles:["Lands"], oracle:"", produced:[col], tags:[]};
 }
 function openImport(){
   const dl = $("dlg");
@@ -1003,7 +1034,7 @@ async function importList(text, asNew){
     const l = look(e.name); if(!l || seen.has(l.name)) continue;
     seen.add(l.name);
     if(e.section === "maybe") deckObj.maybe.push({...l});
-    else deckObj.cards.push({...l, role: isLand(l) ? "Lands" : "Synergy", autoRole:true});
+    else deckObj.cards.push({...l, roles: isLand(l) ? ["Lands"] : ["Synergy"], autoRole:true});
   }
   if(asNew){ const id = uid(); store.decks[id] = deckObj; store.current = id; }
   else { const d = deck(); Object.assign(d, {commander:deckObj.commander, cards:deckObj.cards, maybe:deckObj.maybe}); if(d.name === "New deck") d.name = deckObj.name; }
@@ -1015,10 +1046,21 @@ async function importList(text, asNew){
 const TAG_QUERIES = {ramp:"otag:ramp", draw:"(otag:card-advantage or otag:draw)", removal:"(otag:removal or otag:counterspell)", wipe:"otag:board-wipe", tutor:"otag:tutor"};
 let tagTimer, tagging = false;
 function scheduleTagging(){ clearTimeout(tagTimer); tagTimer = setTimeout(()=>tagPass(false), 1500); }
-function roleFromTags(c){
-  if(isLand(c)) return "Lands";
-  const t = c.tags || [];
-  return t.includes("wipe") ? "Board wipes" : t.includes("removal") ? "Removal" : t.includes("ramp") ? "Ramp" : t.includes("draw") ? "Card draw" : "Synergy";
+/* A card can fill several roles (Path to Exile: Removal + Ramp). Board wipes already count as
+   removal on Scryfall, so a wipe is filed as Board wipes only. Synergy is the catch-all and drops
+   away as soon as a card has a real role. */
+function rolesFromTags(c){
+  if(isLand(c)) return ["Lands"];
+  const t = c.tags || [], out = [];
+  if(t.includes("wipe")) out.push("Board wipes"); else if(t.includes("removal")) out.push("Removal");
+  if(t.includes("ramp")) out.push("Ramp");
+  if(t.includes("draw")) out.push("Card draw");
+  return out.length ? out : ["Synergy"];
+}
+function rolesOf(c){ return c.roles && c.roles.length ? c.roles : [c.role || "Synergy"]; }
+function mergeRoles(a, b){
+  const all = ROLES.map(r=>r.key).filter(k=>a.includes(k) || b.includes(k));
+  return all.length > 1 ? all.filter(k=>k !== "Synergy") : all;
 }
 async function tagPass(reassign){
   if(tagging) return;
@@ -1043,9 +1085,13 @@ async function tagPass(reassign){
           (r.data||[]).forEach(card=>{ const hit = chunk.find(x=>x.name === card.name || x.name.split(" // ")[0] === card.name.split(" // ")[0]); if(hit) found.get(hit.name).push(tag); });
         }
       }
-      untagged.forEach(c=>{ c.tags = found.get(c.name); if(c.autoRole){ c.role = roleFromTags(c); delete c.autoRole; } });
+      untagged.forEach(c=>{
+        c.tags = found.get(c.name);
+        if(!c.rolesEdited) c.roles = c.autoRole ? rolesFromTags(c) : mergeRoles(rolesOf(c), rolesFromTags(c));
+        delete c.autoRole; delete c.role;
+      });
     }
-    if(reassign) d.cards.forEach(c=>{ if(!c.basic){ c.role = roleFromTags(c); delete c.autoRole; } });
+    if(reassign) d.cards.forEach(c=>{ if(!c.basic){ c.roles = rolesFromTags(c); delete c.autoRole; delete c.rolesEdited; delete c.role; } });
     save();
   }catch(e){ /* leave cards untagged; the next change retries */ }
   finally{ tagging = false; }
