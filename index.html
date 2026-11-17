@@ -102,7 +102,12 @@ input[type=text],input[type=number],select{background:var(--sunk);border:1px sol
 .curve b{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0;min-height:1px}
 .curve em{font-style:normal;color:var(--fg);font-variant-numeric:tabular-nums}
 .group h3{display:flex;justify-content:space-between;margin-bottom:4px;border-bottom:1px solid var(--line);padding-bottom:3px}
-.line{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto;gap:6px;align-items:center;padding:3px 0;font-size:13px}
+.step{display:inline-flex;align-items:center;gap:3px}
+.step b{min-width:16px;text-align:center;color:var(--fg);font-weight:600}
+.step button{width:20px;height:20px;padding:0;line-height:1;font-size:13px;border:1px solid var(--line);background:var(--sunk);border-radius:5px}
+.step button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.step button:disabled{opacity:.35;cursor:default}
+.line{display:grid;grid-template-columns:minmax(24px,auto) minmax(0,1fr) auto auto;gap:6px;align-items:center;padding:3px 0;font-size:13px}
 .line .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
 .line select{font-size:11px;padding:2px 4px}
 .rolebtn{font-size:11px;padding:2px 8px;border:1px solid var(--line);background:var(--sunk);border-radius:999px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
@@ -709,14 +714,19 @@ function renderResults(){
     const stat = !c.edh ? "" : pick
       ? `<div class="edh">${c.edh.decks != null ? c.edh.decks.toLocaleString() + " decks" : ""}</div>`
       : `<div class="edh" title="Inclusion: share of these EDHREC decks that run the card. Synergy: how much more often it shows up here than in other decks of these colors.">${c.edh.incl ?? "?"}% of decks${c.edh.syn != null ? ` · ${c.edh.syn > 0 ? "+" : ""}${c.edh.syn}% synergy` : ""}</div>`;
-    const label = pick ? (isCmdr ? "Your commander" : "Use as commander") : have ? "Remove" : "Add";
+    const owned = !pick && have ? deck().cards.find(x=>x.name===c.name) : null;
+    const more = owned && maxCopies(owned) > 1 && (owned.qty||1) < maxCopies(owned);
+    const label = pick ? (isCmdr ? "Your commander" : "Use as commander") : more ? `Add copy · ${owned.qty||1}` : have ? "Remove" : "Add";
+    const left = pick ? "" : more ? `<button class="btn small rm" title="Remove every copy">Remove</button>`
+      : have ? "" : `<button class="btn small mb" title="${maybe ? "Remove from maybeboard" : "Add to maybeboard"}">${maybe ? "Maybe ✓" : "Maybe"}</button>`;
     el.innerHTML = `
       <button class="imgbtn" title="Details">${c.img ? `<img loading="lazy" src="${c.img}" alt="${esc(c.name)}">` : esc(c.name)}</button>
       ${stat}
-      <div class="meta"><span class="price">${c.price ? money(c.price) : "—"}</span>${flagBadges(c.name)}</div>
-      <div class="btns">${pick || have ? "" : `<button class="btn small mb" title="${maybe ? "Remove from maybeboard" : "Add to maybeboard"}">${maybe ? "Maybe ✓" : "Maybe"}</button>`}<button class="btn small main ${have?"":"primary"}" ${pick && isCmdr ? "disabled" : ""}>${label}</button></div>`;
+      <div class="meta"><span class="price">${c.price ? money(c.price) : "—"}</span>${flagBadges(c.name)}${maxCopies(c) > 1 ? `<span class="badge lo" style="background:var(--accent)" title="A deck can run more than one copy">${maxCopies(c) === Infinity ? "Any number" : "Up to " + maxCopies(c)}</span>` : ""}</div>
+      <div class="btns">${left}<button class="btn small main ${have && !more ? "" : "primary"}" ${pick && isCmdr ? "disabled" : ""}>${label}</button></div>`;
     el.querySelector(".imgbtn").onclick = ()=>openCard(c);
-    el.querySelector(".main").onclick = ()=> pick ? setCommander(c) : have ? removeCard(c.name) : addCard(c, search.role);
+    el.querySelector(".main").onclick = ()=> pick ? setCommander(c) : more ? addCard(c, search.role) : have ? removeCard(c.name) : addCard(c, search.role);
+    const rm = el.querySelector(".rm"); if(rm) rm.onclick = ()=>removeCard(c.name);
     const mb = el.querySelector(".mb"); if(mb) mb.onclick = ()=> maybe ? removeMaybe(c.name) : addMaybe(c);
     g.appendChild(el);
   });
@@ -751,9 +761,41 @@ function openCard(c){
 
 /* ---------- deck ---------- */
 function count(){ const d = deck(); return (d.commander?1:0) + d.cards.reduce((n,c)=>n+(c.qty||1),0); }
+/* Commander is singleton except basic lands and cards whose text says otherwise
+   ("A deck can have any number of cards named…", "…up to nine cards named Nazgûl"). */
+const NUM_WORDS = {two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12};
+function maxCopies(c){
+  if(!c) return 1;
+  if(c.basic || /\bBasic\b/.test(c.type_line || "")) return Infinity;
+  const o = c.oracle || "";
+  if(/a deck can have any number of cards named/i.test(o)) return Infinity;
+  const m = o.match(/a deck can have up to (\w+) cards named/i);
+  if(m) return NUM_WORDS[m[1].toLowerCase()] || parseInt(m[1], 10) || 1;
+  return 1;
+}
+function setQty(name, q){
+  const d = deck(), c = d.cards.find(x=>x.name===name); if(!c) return;
+  const max = maxCopies(c), cur = c.qty || 1;
+  if(q > max){ toast(`A deck can have at most ${max} ${c.name}`); q = max; }
+  const room = 100 - count() + cur;
+  if(q > room){ toast("The deck already has 100 cards"); q = room; }
+  if(q < 1 || q === cur) return;
+  c.qty = q; save(); renderDeck(); renderResults();
+}
+function addBasic(name){
+  const d = deck(), ex = d.cards.find(c=>c.name===name);
+  if(ex) return setQty(name, (ex.qty||1) + 1);
+  if(count() >= 100){ toast("The deck already has 100 cards"); return; }
+  d.cards.push(makeBasic(name, 1)); save(); renderDeck(); renderResults();
+}
+
 function addCard(c, role){
   const d = deck();
-  if(inDeck(c.name)){ toast(`${c.name} is already in the deck`); return; }
+  if(inDeck(c.name)){
+    const ex = d.cards.find(x=>x.name===c.name);
+    if(ex && maxCopies(ex) > 1){ setQty(ex.name, (ex.qty||1) + 1); toast(`${ex.qty||1} × ${ex.name}`); return; }
+    toast(`${c.name} is already in the deck`); return;
+  }
   if(count() >= 100){ toast("The deck already has 100 cards"); return; }
   const {edh: _drop, ...card} = c;
   if(search.mode === "edhrec" && role === "Synergy") card.autoRole = true;
@@ -860,6 +902,12 @@ function renderDeckList(){
       <button class="btn" id="clearB">Clear deck</button>
     </div>
     <div id="exportBox" hidden></div>
+    <div class="btnrow"><span class="fine" style="margin-right:2px">Basic lands</span>
+      ${((d.commander && d.commander.ci.length) ? d.commander.ci : (d.commander ? ["C"] : ["W","U","B","R","G"])).map(col=>{
+        const nm = col === "C" ? "Wastes" : BASICS[col], have = d.cards.find(c=>c.name===nm);
+        return `<button class="chip" data-basic="${nm}" title="Add one ${nm}"><img class="ms" alt="" src="${SYM(col)}"> + ${nm}${have ? ` <span class="ct">${have.qty||1}</span>` : ""}</button>`;
+      }).join("")}
+    </div>
     <label for="deckFilter" class="sr">Filter this deck</label>
     <input type="text" id="deckFilter" placeholder="Filter this deck…" value="${esc(deckFilter)}">
     <div id="deckLines" style="display:flex;flex-direction:column;gap:12px">
@@ -877,6 +925,9 @@ function renderDeckList(){
   $("importB").onclick = openImport;
   $("exportB").onclick = showExport;
   $("fillB").onclick = fillBasics;
+  box.querySelectorAll("[data-basic]").forEach(b=>b.onclick = ()=>addBasic(b.dataset.basic));
+  box.querySelectorAll("[data-inc]").forEach(b=>b.onclick = ()=>{ const c = d.cards.find(x=>x.name===b.dataset.inc); if(c) setQty(c.name, (c.qty||1) + 1); });
+  box.querySelectorAll("[data-dec]").forEach(b=>b.onclick = ()=>{ const c = d.cards.find(x=>x.name===b.dataset.dec); if(c) setQty(c.name, (c.qty||1) - 1); });
   $("autoB").onclick = async ()=>{ $("autoB").textContent = "Sorting…"; await tagPass(true); toast("Roles assigned from Scryfall tags"); };
   $("clearB").onclick = ()=>{
     const b = $("clearB");
@@ -915,8 +966,12 @@ function line(c, kind, openEditor){
        <button class="x" data-rm="${name}" aria-label="Remove ${name}">×</button>`;
   const editor = openEditor ? `<div class="roleedit" role="group" aria-label="Roles for ${name}">${ROLES.map(r=>
     `<button class="chip" data-tog="${name}" data-r="${r.key}" aria-pressed="${roles.includes(r.key)}">${r.key}</button>`).join("")}</div>` : "";
+  const q = c.qty || 1, max = kind === "main" ? maxCopies(c) : 1;
+  const qty = max > 1
+    ? `<span class="qty step"><button data-dec="${name}" aria-label="One fewer ${name}" ${q <= 1 ? "disabled" : ""}>−</button><b>${q}</b><button data-inc="${name}" aria-label="One more ${name}" ${q >= max ? "disabled" : ""}>+</button></span>`
+    : `<span class="qty">${q}</span>`;
   return `<div class="line" data-name="${name}">
-    <span class="qty">${c.qty||1}</span>
+    ${qty}
     <span class="nm" data-img="${c.img||""}">${name} ${mana(c.mana_cost)}${flagBadges(c.name)}</span>
     ${tail}</div>${editor}`;
 }
@@ -1008,11 +1063,34 @@ function parseList(text){
   }
   return out;
 }
+const normName = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(" // ")[0].replace(/[^a-z0-9]/g, "");
+function closeName(typed, found){
+  const a = normName(typed), b = normName(found);
+  if(a === b) return true;
+  const row = Array.from({length: b.length + 1}, (_, j)=>j);
+  for(let i = 1; i <= a.length; i++){
+    let prev = row[0]; row[0] = i;
+    for(let j = 1; j <= b.length; j++){
+      const tmp = row[j];
+      row[j] = Math.min(row[j] + 1, row[j-1] + 1, prev + (a[i-1] === b[j-1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return row[b.length] <= Math.max(2, Math.floor(b.length * 0.15));
+}
 async function importList(text, asNew){
   const entries = parseList(text);
   const nonBasic = entries.filter(e=>!basicColor(e.name));
   const found = await cardsByName(nonBasic.map(e=>e.name));
   const look = n => byName.get(n) || byName.get(n.split(" // ")[0]);
+  // names that didn't match exactly (missing accents like "Nazgul", small typos): try Scryfall's fuzzy lookup
+  for(const n of [...new Set(nonBasic.filter(e=>!look(e.name)).map(e=>e.name))].slice(0, 15)){
+    try{
+      const r = await sf(`${API}/cards/named?fuzzy=${encodeURIComponent(n)}`);
+      // Scryfall's fuzzy match can land far away ("Sol Rng" → Oathsworn Giant), so only accept near spellings
+      if(r.object === "card" && closeName(n, r.name)){ const l = lite(r); byName.set(l.name, l); byName.set(n, l); }
+    }catch(e){}
+  }
   const missing = nonBasic.filter(e=>!look(e.name)).map(e=>e.name);
   let cmdrEntry = entries.find(e=>e.section === "cmdr");
   if(!cmdrEntry){
@@ -1031,10 +1109,16 @@ async function importList(text, asNew){
       ex ? ex.qty += e.qty : deckObj.cards.push(makeBasic(e.name.replace(/\b\w/g, ch=>ch.toUpperCase()), e.qty));
       continue;
     }
-    const l = look(e.name); if(!l || seen.has(l.name)) continue;
+    const l = look(e.name); if(!l) continue;
+    const lim = maxCopies(l);
+    if(seen.has(l.name)){
+      const ex = deckObj.cards.find(c=>c.name===l.name);
+      if(ex && lim > 1 && e.section !== "maybe") ex.qty = Math.min(lim, (ex.qty||1) + e.qty);
+      continue;
+    }
     seen.add(l.name);
     if(e.section === "maybe") deckObj.maybe.push({...l});
-    else deckObj.cards.push({...l, roles: isLand(l) ? ["Lands"] : ["Synergy"], autoRole:true});
+    else deckObj.cards.push({...l, qty: lim > 1 ? Math.min(lim, e.qty) : 1, roles: isLand(l) ? ["Lands"] : ["Synergy"], autoRole:true});
   }
   if(asNew){ const id = uid(); store.decks[id] = deckObj; store.current = id; }
   else { const d = deck(); Object.assign(d, {commander:deckObj.commander, cards:deckObj.cards, maybe:deckObj.maybe}); if(d.name === "New deck") d.name = deckObj.name; }
