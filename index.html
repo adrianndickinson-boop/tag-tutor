@@ -298,7 +298,11 @@ const CATS = [
 
 const BASICS = {W:"Plains",U:"Island",B:"Swamp",R:"Mountain",G:"Forest"};
 const EDHREC = "https://json.edhrec.com/pages/";
-const SPELLBOOK = "https://backend.commanderspellbook.com/find-my-combos";
+// Commander Spellbook refuses requests from github.io, so the hosted site goes through a small Cloudflare relay.
+// Opened from disk or another host, the page calls Spellbook directly.
+const SPELLBOOK = location.hostname.endsWith("github.io")
+  ? "https://tag-tutor-combos.adrian-n-dickinson.workers.dev/"
+  : "https://backend.commanderspellbook.com/find-my-combos";
 const BRACKETS = {1:"Exhibition",2:"Core",3:"Upgraded",4:"Optimized",5:"cEDH"};
 
 /* ---------- state ---------- */
